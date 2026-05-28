@@ -1,0 +1,7 @@
+.code
+.idea
+.DS_Store
+*.swp
+*.swo
+__pycache__/
+*.py[cod]
