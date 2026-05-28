@@ -103,6 +103,34 @@ by `-`. So the chain to load a conversation is:
 Break the `cliSessionId` link and the App has no way to find the conversation
 even though the file is right there on disk.
 
+**Broken entry** (after scanner runs on launch):
+
+```json
+{
+  "sessionId": "local_a1b2c3d4-...",
+  "title": "EJBCA-ce TwoSter",
+  "cwd": "/Users/jdb/work.Claude/2026-05-19.EJBCA-ce",
+  "createdAt": 1748939630700,
+  "transcriptUnavailable": true
+}
+```
+
+**Healthy entry** (as originally written, or after fix applied):
+
+```json
+{
+  "sessionId": "local_a1b2c3d4-...",
+  "title": "EJBCA-ce TwoSter",
+  "cwd": "/Users/jdb/work.Claude/2026-05-19.EJBCA-ce",
+  "createdAt": 1748939630700,
+  "cliSessionId": "4b6270cb-21cf-4edb-9449-48ea842cc378"
+}
+```
+
+The difference is two fields: `transcriptUnavailable` is present (broken) vs.
+absent (healthy), and `cliSessionId` is absent (broken) vs. set to the
+matching jsonl UUID (healthy).
+
 ## Root cause
 
 On startup, the Desktop App scans every `local_*.json` file. For reasons we
@@ -243,7 +271,7 @@ Suggested text for reporting this upstream:
 > but the scanner's trust heuristic is not fully deterministic — entries can
 > be re-nullified on a later launch with no user intervention, requiring
 > the workaround to be re-applied. Auto-recovery script:
-> <https://github.com/...> (or share the `fix-amnesia.py` here).
+> <https://github.com/John-D-B/Claudes/blob/main/2026-05-27.Claude-Amnesia/Bin/fix-amnesia.py>
 >
 > **Impact:** Multi-session workflows in Desktop App are broken — every
 > restart can wipe session continuity for an unpredictable subset of tiles.
