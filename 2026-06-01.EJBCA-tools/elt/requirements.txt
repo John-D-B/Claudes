@@ -1,0 +1,16 @@
+# ejbca-lifecycle-tool.py — Python dependencies
+#
+# Core runtime dependencies:
+requests>=2.28.0
+urllib3>=1.26.0
+#
+# Optional: only needed if using -f <issuer-yaml> flag.
+# ELT includes a built-in minimal YAML line parser as fallback,
+# so PyYAML is not strictly required.
+PyYAML>=5.3.1
+#
+# Optional: only needed for the SOAP backend (v4.0.0).
+# Used when running against EJBCA Community Edition, which does not ship
+# the End Entity REST API, or with the -z / --zeep flag. Lazily imported
+# inside EjbcaSoapBackend.__init__ so REST-only deployments don't need it.
+zeep>=4.0.0

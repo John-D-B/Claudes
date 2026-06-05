@@ -1,0 +1,234 @@
+
+# - SAST tests for ELT
+#   -> I do this on my private DEV Laptop, before release.
+#
+# - Tools:
+#   Bandit:     https://bandit.readthedocs.io/en/latest/
+#   pip-audit:  https://pypi.org/project/pip-audit/
+
+
+mac$ date; whoami; uname -n; pwd
+    Wed Apr  1 17:50:14 CEST 2026
+    jdb
+    jdb-macbook-2023
+    .../elt/
+
+mac$ ls -hF | f_indent
+    README.md
+    ejbca-lifecycle-tool.py*
+    insights/
+    requirements.txt
+
+mac$ ./ejbca-lifecycle-tool.py -V
+    ejbca-lifecycle-tool.py v3.12.0
+
+
+# - FYI:
+mac$ which python3; python3 --version
+    /Users/jdb/miniconda3/bin/python3
+    Python 3.13.11
+
+mac$ which pip; pip --version
+    /Users/jdb/miniconda3/bin/pip
+    pip 25.3 from /Users/jdb/miniconda3/lib/python3.13/site-packages/pip (python 3.13)
+
+
+    ##########
+    # Bandit #
+    ##########
+
+mac$ pip install bandit
+    Collecting bandit
+      Downloading bandit-1.9.4-py3-none-any.whl.metadata (7.1 kB)
+    Collecting PyYAML>=5.3.1 (from bandit)
+      Downloading pyyaml-6.0.3-cp313-cp313-macosx_11_0_arm64.whl.metadata (2.4 kB)
+    Collecting stevedore>=1.20.0 (from bandit)
+      Downloading stevedore-5.7.0-py3-none-any.whl.metadata (2.4 kB)
+    Requirement already satisfied: rich in /Users/jdb/miniconda3/lib/python3.13/site-packages (from bandit) (14.2.0)
+    Requirement already satisfied: markdown-it-py>=2.2.0 in /Users/jdb/miniconda3/lib/python3.13/site-packages (from rich->bandit) (4.0.0)
+    Requirement already satisfied: pygments<3.0.0,>=2.13.0 in /Users/jdb/miniconda3/lib/python3.13/site-packages (from rich->bandit) (2.19.2)
+    Requirement already satisfied: mdurl~=0.1 in /Users/jdb/miniconda3/lib/python3.13/site-packages (from markdown-it-py>=2.2.0->rich->bandit) (0.1.2)
+    Downloading bandit-1.9.4-py3-none-any.whl (134 kB)
+    Downloading pyyaml-6.0.3-cp313-cp313-macosx_11_0_arm64.whl (173 kB)
+    Downloading stevedore-5.7.0-py3-none-any.whl (54 kB)
+    Installing collected packages: stevedore, PyYAML, bandit
+    Successfully installed PyYAML-6.0.3 bandit-1.9.4 stevedore-5.7.0
+
+mac$ which bandit; bandit --version
+    /Users/jdb/miniconda3/bin/bandit
+    bandit 1.9.4
+      python version = 3.13.11 | packaged by Anaconda, Inc. | (main, Dec 10 2025, 21:21:08) [Clang 20.1.8 ]
+
+
+    # - Summary scan:
+
+mac$ bandit ejbca-lifecycle-tool.py -ll
+    [main]  INFO    profile include tests: None
+    [main]  INFO    profile exclude tests: None
+    [main]  INFO    cli include tests: None
+    [main]  INFO    cli exclude tests: None
+    [main]  INFO    running on Python 3.13.11
+    Run started:2026-04-01 16:02:21.173047+00:00
+    
+    Test results:
+            No issues identified.
+    
+    Code scanned:
+            Total lines of code: 2769
+            Total lines skipped (#nosec): 0
+    
+    Run metrics:
+            Total issues (by severity):
+                    Undefined: 0
+                    Low: 2
+                    Medium: 0
+                    High: 0
+            Total issues (by confidence):
+                    Undefined: 0
+                    Low: 0
+                    Medium: 0
+                    High: 2
+    Files skipped (0):
+
+
+    # - Full scan:
+
+mac$ bandit ejbca-lifecycle-tool.py
+    [main]  INFO    profile include tests: None
+    [main]  INFO    profile exclude tests: None
+    [main]  INFO    cli include tests: None
+    [main]  INFO    cli exclude tests: None
+    [main]  INFO    running on Python 3.13.11
+    Run started:2026-04-01 16:03:05.829938+00:00
+    
+    Test results:
+    >> Issue: [B404:blacklist] Consider possible security implications associated with the subprocess module.
+       Severity: Low   Confidence: High
+       CWE: CWE-78 (https://cwe.mitre.org/data/definitions/78.html)
+       More Info: https://bandit.readthedocs.io/en/1.9.4/blacklists/blacklist_imports.html#b404-import-subprocess
+       Location: ./ejbca-lifecycle-tool.py:48:0
+    47      import shlex
+    48      import subprocess
+    49      import sys
+    
+    --------------------------------------------------
+    >> Issue: [B603:subprocess_without_shell_equals_true] subprocess call - check for execution of untrusted input.
+       Severity: Low   Confidence: High
+       CWE: CWE-78 (https://cwe.mitre.org/data/definitions/78.html)
+       More Info: https://bandit.readthedocs.io/en/1.9.4/plugins/b603_subprocess_without_shell_equals_true.html
+       Location: ./ejbca-lifecycle-tool.py:746:17
+    745             log.debug(f"kubectl command: {' '.join(full_cmd)}")
+    746             result = subprocess.run(
+    747                 full_cmd,
+    748                 capture_output=True, text=True, timeout=30
+    749             )
+    750             if result.returncode != 0:
+    
+    --------------------------------------------------
+    
+    Code scanned:
+            Total lines of code: 2769
+            Total lines skipped (#nosec): 0
+    
+    Run metrics:
+            Total issues (by severity):
+                    Undefined: 0
+                    Low: 2
+                    Medium: 0
+                    High: 0
+            Total issues (by confidence):
+                    Undefined: 0
+                    Low: 0
+                    Medium: 0
+                    High: 2
+    Files skipped (0):
+
+
+    #############
+    # pip.audit #
+    #############
+
+mac$ pip install pip-audit
+    Collecting pip-audit
+      Downloading pip_audit-2.10.0-py3-none-any.whl.metadata (28 kB)
+    Collecting CacheControl>=0.13.0 (from CacheControl[filecache]>=0.13.0->pip-audit)
+      Downloading cachecontrol-0.14.4-py3-none-any.whl.metadata (3.1 kB)
+    Collecting cyclonedx-python-lib<12,>=5 (from pip-audit)
+      Downloading cyclonedx_python_lib-11.7.0-py3-none-any.whl.metadata (6.8 kB)
+    Requirement already satisfied: packaging>=23.0.0 in /Users/jdb/miniconda3/lib/python3.13/site-packages (from pip-audit) (25.0)
+    Collecting pip-api>=0.0.28 (from pip-audit)
+      Downloading pip_api-0.0.34-py3-none-any.whl.metadata (6.6 kB)
+    Collecting pip-requirements-parser>=32.0.0 (from pip-audit)
+      Downloading pip_requirements_parser-32.0.1-py3-none-any.whl.metadata (9.3 kB)
+    Requirement already satisfied: requests>=2.31.0 in /Users/jdb/miniconda3/lib/python3.13/site-packages (from pip-audit) (2.32.5)
+    Requirement already satisfied: rich>=12.4 in /Users/jdb/miniconda3/lib/python3.13/site-packages (from pip-audit) (14.2.0)
+    Requirement already satisfied: tomli>=2.2.1 in /Users/jdb/miniconda3/lib/python3.13/site-packages (from pip-audit) (2.2.1)
+    Collecting tomli-w>=1.2.0 (from pip-audit)
+      Downloading tomli_w-1.2.0-py3-none-any.whl.metadata (5.7 kB)
+    Requirement already satisfied: platformdirs>=4.2.0 in /Users/jdb/miniconda3/lib/python3.13/site-packages (from pip-audit) (4.5.0)
+    Collecting license-expression<31,>=30 (from cyclonedx-python-lib<12,>=5->pip-audit)
+      Downloading license_expression-30.4.4-py3-none-any.whl.metadata (11 kB)
+    Collecting packageurl-python<2,>=0.11 (from cyclonedx-python-lib<12,>=5->pip-audit)
+      Downloading packageurl_python-0.17.6-py3-none-any.whl.metadata (5.1 kB)
+    Collecting py-serializable<3.0.0,>=2.1.0 (from cyclonedx-python-lib<12,>=5->pip-audit)
+      Downloading py_serializable-2.1.0-py3-none-any.whl.metadata (4.3 kB)
+    Collecting sortedcontainers<3.0.0,>=2.4.0 (from cyclonedx-python-lib<12,>=5->pip-audit)
+      Downloading sortedcontainers-2.4.0-py2.py3-none-any.whl.metadata (10 kB)
+    Collecting boolean.py>=4.0 (from license-expression<31,>=30->cyclonedx-python-lib<12,>=5->pip-audit)
+      Downloading boolean_py-5.0-py3-none-any.whl.metadata (2.3 kB)
+    Collecting defusedxml<0.8.0,>=0.7.1 (from py-serializable<3.0.0,>=2.1.0->cyclonedx-python-lib<12,>=5->pip-audit)
+      Downloading defusedxml-0.7.1-py2.py3-none-any.whl.metadata (32 kB)
+    Requirement already satisfied: msgpack<2.0.0,>=0.5.2 in /Users/jdb/miniconda3/lib/python3.13/site-packages (from CacheControl>=0.13.0->CacheControl[filecache]>=0.13.0->pip-audit) (1.1.1)
+    Collecting filelock>=3.8.0 (from CacheControl[filecache]>=0.13.0->pip-audit)
+      Downloading filelock-3.25.2-py3-none-any.whl.metadata (2.0 kB)
+    Requirement already satisfied: pip in /Users/jdb/miniconda3/lib/python3.13/site-packages (from pip-api>=0.0.28->pip-audit) (25.3)
+    Collecting pyparsing (from pip-requirements-parser>=32.0.0->pip-audit)
+      Downloading pyparsing-3.3.2-py3-none-any.whl.metadata (5.8 kB)
+    Requirement already satisfied: charset_normalizer<4,>=2 in /Users/jdb/miniconda3/lib/python3.13/site-packages (from requests>=2.31.0->pip-audit) (3.4.4)
+    Requirement already satisfied: idna<4,>=2.5 in /Users/jdb/miniconda3/lib/python3.13/site-packages (from requests>=2.31.0->pip-audit) (3.11)
+    Requirement already satisfied: urllib3<3,>=1.21.1 in /Users/jdb/miniconda3/lib/python3.13/site-packages (from requests>=2.31.0->pip-audit) (2.6.1)
+    Requirement already satisfied: certifi>=2017.4.17 in /Users/jdb/miniconda3/lib/python3.13/site-packages (from requests>=2.31.0->pip-audit) (2025.11.12)
+    Requirement already satisfied: markdown-it-py>=2.2.0 in /Users/jdb/miniconda3/lib/python3.13/site-packages (from rich>=12.4->pip-audit) (4.0.0)
+    Requirement already satisfied: pygments<3.0.0,>=2.13.0 in /Users/jdb/miniconda3/lib/python3.13/site-packages (from rich>=12.4->pip-audit) (2.19.2)
+    Requirement already satisfied: mdurl~=0.1 in /Users/jdb/miniconda3/lib/python3.13/site-packages (from markdown-it-py>=2.2.0->rich>=12.4->pip-audit) (0.1.2)
+    Downloading pip_audit-2.10.0-py3-none-any.whl (61 kB)
+    Downloading cyclonedx_python_lib-11.7.0-py3-none-any.whl (513 kB)
+    Downloading license_expression-30.4.4-py3-none-any.whl (120 kB)
+    Downloading packageurl_python-0.17.6-py3-none-any.whl (36 kB)
+    Downloading py_serializable-2.1.0-py3-none-any.whl (23 kB)
+    Downloading defusedxml-0.7.1-py2.py3-none-any.whl (25 kB)
+    Downloading sortedcontainers-2.4.0-py2.py3-none-any.whl (29 kB)
+    Downloading boolean_py-5.0-py3-none-any.whl (26 kB)
+    Downloading cachecontrol-0.14.4-py3-none-any.whl (22 kB)
+    Downloading filelock-3.25.2-py3-none-any.whl (26 kB)
+    Downloading pip_api-0.0.34-py3-none-any.whl (120 kB)
+    Downloading pip_requirements_parser-32.0.1-py3-none-any.whl (35 kB)
+    Downloading tomli_w-1.2.0-py3-none-any.whl (6.7 kB)
+    Downloading pyparsing-3.3.2-py3-none-any.whl (122 kB)
+    Installing collected packages: sortedcontainers, boolean.py, tomli-w, pyparsing, pip-api, packageurl-python, license-expression, filelock, defusedxml, py-serializable, pip-requirements-parser, CacheControl, cyclonedx-python-lib, pip-audit
+    Successfully installed CacheControl-0.14.4 boolean.py-5.0 cyclonedx-python-lib-11.7.0 defusedxml-0.7.1 filelock-3.25.2 license-expression-30.4.4 packageurl-python-0.17.6 pip-api-0.0.34 pip-audit-2.10.0 pip-requirements-parser-32.0.1 py-serializable-2.1.0 pyparsing-3.3.2 sortedcontainers-2.4.0 tomli-w-1.2.0
+
+
+mac$ cat requirements.txt 
+    # ejbca-lifecycle-tool.py — Python dependencies
+    #
+    # Core runtime dependencies:
+    requests>=2.28.0
+    urllib3>=1.26.0
+    #
+    # Optional: only needed if using -f <issuer-yaml> flag.
+    # ELT includes a built-in minimal YAML line parser as fallback,
+    # so PyYAML is not strictly required.
+    PyYAML>=5.3.1
+
+
+mac$ pip-audit -v -r requirements.txt
+    DEBUG:pip_audit._cli:parsed arguments: Namespace(local=False, requirements=[PosixPath('requirements.txt')], project_path=None, locked=False, format=<OutputFormatChoice.Columns: 'columns'>, vulnerability_service=<VulnerabilityServiceChoice.Pypi: 'pypi'>, osv_url='https://api.osv.dev/v1/query', dry_run=False, strict=False, desc=<VulnerabilityDescriptionChoice.Auto: 'auto'>, aliases=<VulnerabilityAliasChoice.Auto: 'auto'>, cache_dir=None, progress_spinner=<ProgressSpinnerChoice.On: 'on'>, timeout=15, paths=[], verbose=1, fix=False, require_hashes=False, index_url=None, extra_index_urls=[], skip_editable=False, no_deps=False, output=PosixPath('stdout'), ignore_vulns=[], disable_pip=False)
+    DEBUG:pip_audit._cli:Auditing requests (2.33.1)
+    DEBUG:pip_audit._cli:Auditing urllib3 (2.6.3)
+    DEBUG:pip_audit._cli:Auditing charset-normalizer (3.4.6)
+    DEBUG:pip_audit._cli:Auditing idna (3.11)
+    DEBUG:pip_audit._cli:Auditing PyYAML (6.0.3)
+    DEBUG:pip_audit._cli:Auditing certifi (2026.2.25)
+    No known vulnerabilities found
+

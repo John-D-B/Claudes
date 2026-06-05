@@ -1,0 +1,1 @@
+../elt/ejbca-lifecycle-tool.py

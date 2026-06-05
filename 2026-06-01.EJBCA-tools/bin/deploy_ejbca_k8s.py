@@ -1,0 +1,1 @@
+../dek/deploy_ejbca_k8s.py
