@@ -1,6 +1,6 @@
 # Claude Desktop App — "Session Amnesia" Diagnosis and Fix
 
-**Author:**  John Buehrer (JohnB), with AI pair-programming support by Anthropic Claude<br/>
+**Author:**  JohnB, with AI pair-programming support by Anthropic Claude<br/>
 **Diagnosed:** 2026-05-28: Claude Code "TwoSter" (Opus 4.7) + JohnB collaboration.<br/>
 **Affected versions:** Claude Desktop App 2.1.144+ (macOS).<br/>
 **Status:** root cause identified, file-level workaround proven, auto-recovery script: `fix-amnesia.py`
