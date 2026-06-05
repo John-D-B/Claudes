@@ -37,7 +37,7 @@ Original software by John Buehrer
 with AI pair-programming support by Anthropic Claude
 """
 
-__version__ = "5.4.0"
+__version__ = "5.5.0"
 
 import argparse
 import json
@@ -228,7 +228,12 @@ class EjbcaSoapBackend:
 
         # Resolve WSDL source: explicit > local cached file > live URL.
         if wsdl is None:
-            local = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+            # realpath() (not abspath) so the lookup follows symlinks —
+            # ELT may be invoked via a bin/-style symlink (e.g.
+            # John-D-B/Claudes/2026-06-01.EJBCA-tools/bin/) and abspath
+            # would return the symlink's parent (bin/), missing the
+            # sibling wsdl/ dir that lives next to the real source file.
+            local = os.path.join(os.path.dirname(os.path.realpath(__file__)),
                                  "wsdl", "ejbca-ws.wsdl")
             wsdl = local if os.path.exists(local) else \
                    f"https://{host}:{port}/ejbca/ejbcaws/ejbcaws?wsdl"

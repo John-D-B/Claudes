@@ -21,7 +21,7 @@ Usage:
     $ cat cert.pem | cert-grep.py - [options...]
 """
 
-__version__ = "4.12.0"
+__version__ = "4.12.1"
 __origin__  = "f_cert_grep v13.13.0 (bashrc_101_g), f_cert_grep_csr v11.1.0 (bashrc_101_f)"
 
 import sys
@@ -3892,8 +3892,13 @@ class WeaknessScanner:
             # Explicit list — use exactly these files, no auto-default
             self._config_paths = list(config_paths)
         else:
-            # No paths given — load default config relative to script
-            script_dir = os.path.dirname(os.path.abspath(__file__))
+            # No paths given — load default config relative to script.
+            # realpath() (not abspath) so the lookup follows symlinks —
+            # otherwise a symlinked invocation (e.g. ~/bin/cert-grep.py
+            # pointing into the cert-grep.jdb tree) looks for
+            # configs/weak.conf next to the symlink instead of next to
+            # the real script.  v4.12.1.
+            script_dir = os.path.dirname(os.path.realpath(__file__))
             default_conf = os.path.join(script_dir, "..", "configs", "weak.conf")
             if os.path.isfile(default_conf):
                 self._config_paths = [default_conf]
