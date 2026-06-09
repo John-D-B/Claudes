@@ -1,0 +1,37 @@
+# Dockerfile.local-fixes — overlays our locally-built EAR on top of the
+# upstream EJBCA-CE image. Produces ejbca-ce:local-fixes, used by the local
+# stack when we want to exercise CE-source changes from Phase 3.
+#
+# The upstream image ships an EXPLODED EAR at /opt/keyfactor/ejbca/dist/ejbca.ear/
+# (a directory containing adminweb.war, ejbca-rest-api.war, lib/*.jar, etc.).
+# Several siblings symlink into it — notably clientToolBox/lib/*.jar, which
+# point at /opt/keyfactor/ejbca/dist/ejbca.ear/lib/{bcprov,bcpkix,...}.jar.
+# If we replace the directory with a packaged .ear file, those symlinks break
+# and the bootstrap CLI fails with ClassNotFoundException on BouncyCastle.
+#
+# Solution: keep the EAR exploded, exactly mirroring upstream's layout. The
+# build script (./Bin/3.3-build-local-image.sh) extracts our packaged EAR
+# into ejbca-ce/build/libs/ejbca.ear.exploded/ on the host so Docker can
+# COPY it in as a directory — no unzip/jar tool required inside the image.
+#
+# Build (from project root):
+#   ./Bin/3.3-build-local-image.sh
+
+FROM keyfactor/ejbca-ce:latest
+
+# Path to the exploded EAR directory within the docker build context.
+ARG EAR_EXPLODED=ejbca-ce/build/libs/ejbca.ear.exploded
+
+# Pinned to the WildFly version shipped by keyfactor/ejbca-ce 9.3.7.
+ARG EJBCA_DIST_DIR=/opt/keyfactor/ejbca/dist
+
+USER root
+# Wipe the upstream's exploded EAR and replace with ours.
+RUN rm -rf ${EJBCA_DIST_DIR}/ejbca.ear
+COPY ${EAR_EXPLODED} ${EJBCA_DIST_DIR}/ejbca.ear
+RUN chown -R 10001:0 ${EJBCA_DIST_DIR}/ejbca.ear
+USER 10001
+
+LABEL org.opencontainers.image.title="ejbca-ce-local-fixes"
+LABEL org.opencontainers.image.description="EJBCA Community Edition with locally-built fixes (Phase 3 prototypes)"
+LABEL org.opencontainers.image.source="https://github.com/Keyfactor/ejbca-ce (modified)"

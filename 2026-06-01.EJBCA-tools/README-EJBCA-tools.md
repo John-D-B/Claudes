@@ -1,6 +1,6 @@
 # EJBCA tools
 
-**Author:** John Buehrer (JohnB), with AI pair-programming support by Anthropic Claude<br/>
+**Author:** JohnB, with AI pair-programming support by Anthropic Claude<br/>
 **Date:** 2026-06-01
 
 A small bundle of Python tools for working with **EJBCA** — Keyfactor's<br/>
@@ -20,6 +20,7 @@ The tools work standalone — each does one well-scoped job — and compose<br/>
 | [`dek/`](./dek/) | **`deploy_ejbca_k8s.py`** | Deploys `cert-manager` and the EJBCA cert-manager-issuer into a Kubernetes cluster, then issues a test certificate end-to-end against an EJBCA backend. Idempotent re-implementation of Keyfactor's *"Use EJBCA with cert-manager"* tutorial as a CLI tool. |
 | [`elt/`](./elt/) | **`ejbca-lifecycle-tool.py`** (ELT) | Direct EJBCA REST / SOAP client for listing, enrolling, revoking, and reaping End Entities and certificates. Useful as a quick CLI alternative to the EJBCA admin GUI. |
 | [`cg/`](./cg/) | **`cert-grep.py`** | Standalone X.509 pretty-printer. Reads PEM or DER from stdin or by path, emits chosen `summary_N` views of the cert internals. A friendlier alternative to `openssl x509 -text -noout`. |
+| [`ejbca-ce/`](./ejbca-ce/) | (shell scripts + Docker stack) | Local EJBCA Community Edition stack via `docker compose`, plus the bucketed workflow scripts (`Bin/100.setup/`, `Bin/120.rebuild/`, `Bin/130.probes/`, `Bin/140.verify-PR/`) that bring it up, rebuild it after local edits, probe it, and verify the two CE PRs (Fix-26 REST DELETE + Fix-27 DBMS Worker). |
 | [`bin/`](./bin/) | (symlinks) | Single flat namespace for adding the tools to your `$PATH`. |
 
 ## Getting started

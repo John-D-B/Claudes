@@ -1,0 +1,350 @@
+#!/usr/bin/env bash
+# 142.fix-27-integration-test.sh — exercises the new DatabaseMaintenanceWorker
+# "Delete Revoked Certificates" capability (fix 27) end-to-end against the
+# local stack.
+#
+# See Docs/ejbca-ce-task-3.5-fix-27-test-plan.md for design rationale. This
+# script is an automated equivalent of the manual GUI walkthrough in that
+# doc: it uses `ejbca.sh service create` to install the worker, sets a
+# 1-minute periodic interval, and waits one tick before verifying.
+#
+# Prereqs:
+#   - Stack running ejbca-ce:local-fixes (the new worker only exists there).
+#   - ./Creds/elt/ce-eltadmin.{crt,key} present (1.4b).
+#   - ./Bin/elt/ce-target.env present.
+#
+# Test design:
+#   - 3 fresh end entities, names prefixed fix27-<runtag>-{a,b,c}:
+#       a, b: revoked SUPERSEDED      (worker should DELETE these)
+#       c:    revoked KEY_COMPROMISE  (worker should LEAVE this alone)
+#   - All 3 issued with multi-year validity. The worker's filter is
+#     status=REVOKED AND revocationReason IN :reasons (expireDate is
+#     not part of the filter — see Docs/PR-fix-27-*.md "Motivation"),
+#     so the multi-year validity here is only about keeping the test
+#     reason-driven and time-independent within the ~80s test window.
+#   - Worker configured with deleteRevokedCertificates=true,
+#     revocationReasons=SUPERSEDED, delayTimeValue=0 (no quarantine).
+#   - Interval = 1 minute periodic. Wait ~80s, then verify:
+#       - a, b: revocationstatus returns 404 (deleted)
+#       - c:    revocationstatus returns 200 with revoked=true (survived)
+#   - The 2 SUPERSEDED kills + 1 KEY_COMPROMISE survival is what
+#     distinguishes this test from "does the worker run at all" — proves
+#     the revocation-reason filter actually filters.
+#
+# Side effect: also sweeps any other SUPERSEDED revoked-but-valid records
+# in the database (e.g. the test-fixture-superseded-* records that Bin/2.5
+# produces). That's the documented feature semantics, not a side effect.
+#
+# Exit 0 on full pass, 1 on any failure.
+
+version='1.0.0'
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+ROOT_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
+cd "$ROOT_DIR"
+
+VENV_PY="./.venv/bin/python"
+STACK_DIR="./stack"
+EJBCA="/opt/keyfactor/bin/ejbca.sh"
+
+RUN_TAG="$(date +%Y%m%d-%H%M%S)"
+EE_SUP_A="fix27-${RUN_TAG}-a"
+EE_SUP_B="fix27-${RUN_TAG}-b"
+EE_KC_C="fix27-${RUN_TAG}-c"
+EE_PASSWORD="ittest$RUN_TAG"
+CA_NAME="ManagementCA"
+SERVICE_NAME="Fix27Test-${RUN_TAG}"
+TMP_DIR="/tmp/claude/elt/3.5-$RUN_TAG"
+mkdir -p "$TMP_DIR"
+
+# Wait long enough for one periodic-interval tick (60s) + buffer.
+WORKER_WAIT_SECONDS=80
+
+# ---------- result tracking ----------
+PASS=0
+FAIL=0
+declare -a SUMMARY
+record_pass() { PASS=$((PASS+1)); SUMMARY+=("$1  PASS  $2"); printf "  [PASS]\n"; }
+record_fail() { FAIL=$((FAIL+1)); SUMMARY+=("$1  FAIL  $2"); printf "  [FAIL]\n"; }
+
+# ---------- target config ----------
+load_target_config() {
+    local cfg="./Bin/elt/ce-target.env"
+    [ -f "$cfg" ] || { echo "ERROR: $cfg not present" >&2; exit 3; }
+    unset ELT_HOST ELT_PORT ELT_CERT ELT_KEY ELT_CA_CERT ELT_VERIFY_SSL ELT_PROXY
+    # shellcheck disable=SC1090
+    set +u; . "$cfg"; set -u
+    [ -f "$ELT_CERT" ] && [ -f "$ELT_KEY" ] \
+        || { echo "ERROR: cert/key not at $ELT_CERT / $ELT_KEY" >&2; exit 3; }
+}
+
+# ---------- curl helper (writes HTTP code to a file, prints body) ----------
+curl_ejbca() {
+    local method="$1" path="$2"; shift 2
+    local verify=""
+    [ "${ELT_VERIFY_SSL:-}" = "no" ] && verify="-k"
+    local ca_arg=""
+    [ -n "${ELT_CA_CERT:-}" ] && [ -z "$verify" ] && ca_arg="--cacert $ELT_CA_CERT"
+    local url="https://${ELT_HOST}:${ELT_PORT:-443}/ejbca/ejbca-rest-api${path}"
+    curl -sS -o "$TMP_DIR/last-body.txt" -w "%{http_code}" \
+        --cert "$ELT_CERT" --key "$ELT_KEY" \
+        $verify $ca_arg \
+        -X "$method" "$url" "$@" > "$TMP_DIR/last-code.txt" 2>/dev/null \
+        || echo "000" > "$TMP_DIR/last-code.txt"
+    cat "$TMP_DIR/last-body.txt"
+}
+http_code_last() { cat "$TMP_DIR/last-code.txt" 2>/dev/null || echo "000"; }
+
+# ---------- container helpers ----------
+ejbca_exec() {
+    docker compose -f "$STACK_DIR/docker-compose.yml" exec -T ejbca "$@"
+}
+
+# ---------- enroll + revoke a single fixture ----------
+# Args: 1=username, 2=revocation-reason (SUPERSEDED|KEY_COMPROMISE)
+# After: extracts the resulting cert to $TMP_DIR/<user>.crt;
+#        sets globals ISSUER_DN_*, SERIAL_HEX_* keyed by uppercase reason+letter.
+provision_and_revoke() {
+    local user="$1" reason="$2"
+    local p12_local="$TMP_DIR/${user}.p12"
+    local crt_local="$TMP_DIR/${user}.crt"
+    ejbca_exec "$EJBCA" ra addendentity \
+        --username "$user" --dn "CN=$user" --caname "$CA_NAME" \
+        --type 1 --token P12 --password "$EE_PASSWORD" \
+        --certprofile ENDUSER --eeprofile EMPTY 2>&1 \
+        | grep -v "log4j\|FIPS" || true
+    ejbca_exec "$EJBCA" ra setclearpwd "$user" "$EE_PASSWORD" 2>&1 \
+        | grep -v "log4j\|FIPS" || true
+    ejbca_exec "$EJBCA" batch "$user" 2>&1 \
+        | grep -v "log4j\|FIPS" || true
+    # Find the produced keystore (.p12 or .jks).
+    local ks_in
+    ks_in=$(ejbca_exec sh -c "
+        for ext in p12 jks; do
+            f=/opt/keyfactor/p12/${user}.\$ext
+            [ -f \"\$f\" ] && { echo \"\$f\"; exit 0; }
+        done" | tr -d '\r')
+    [ -n "$ks_in" ] || return 1
+    if [ "${ks_in##*.}" = "p12" ]; then
+        docker compose -f "$STACK_DIR/docker-compose.yml" cp "ejbca:$ks_in" "$p12_local"
+    else
+        local jks_local="$TMP_DIR/${user}.jks"
+        docker compose -f "$STACK_DIR/docker-compose.yml" cp "ejbca:$ks_in" "$jks_local"
+        keytool -importkeystore \
+            -srckeystore "$jks_local" -srcstoretype JKS -srcstorepass "$EE_PASSWORD" \
+            -destkeystore "$p12_local" -deststoretype PKCS12 -deststorepass "$EE_PASSWORD" \
+            -noprompt >/dev/null 2>&1
+    fi
+    openssl pkcs12 -in "$p12_local" -nokeys -clcerts -passin "pass:$EE_PASSWORD" \
+        -out "$crt_local" 2>/dev/null
+    [ -s "$crt_local" ] || return 1
+    # Extract issuer/serial first so they're available even on no-revoke path.
+    local issuer serial issuer_enc path body
+    issuer=$(openssl x509 -in "$crt_local" -noout -issuer -nameopt RFC2253 | sed 's/^issuer=//')
+    serial=$(openssl x509 -in "$crt_local" -noout -serial | sed 's/^serial=//' | tr 'A-F' 'a-f')
+    # Stash issuer+serial for later verification.
+    echo "$issuer" > "$TMP_DIR/${user}.issuer"
+    echo "$serial" > "$TMP_DIR/${user}.serial"
+    # Reason "NONE" means "provision only, leave the cert ACTIVE" — used by
+    # T12 to set up the expired-only fixture for the compositional AND test.
+    if [ "$reason" = "NONE" ]; then
+        return 0
+    fi
+    # Revoke via the existing PUT endpoint.
+    issuer_enc=$("$VENV_PY" -c 'import sys, urllib.parse; print(urllib.parse.quote(sys.argv[1], safe=""))' "$issuer")
+    path="/v1/certificate/${issuer_enc}/${serial}/revoke?reason=${reason}"
+    body=$(curl_ejbca PUT "$path")
+    [ "$(http_code_last)" = "200" ] || { echo "ERROR: revoke $user failed (http=$(http_code_last) body=$body)" >&2; return 1; }
+    return 0
+}
+
+verify_revocationstatus() {
+    local user="$1" expected_code="$2" expected_extra="$3"  # $3 = grep on body or empty
+    local issuer serial issuer_enc body
+    issuer=$(cat "$TMP_DIR/${user}.issuer")
+    serial=$(cat "$TMP_DIR/${user}.serial")
+    issuer_enc=$("$VENV_PY" -c 'import sys, urllib.parse; print(urllib.parse.quote(sys.argv[1], safe=""))' "$issuer")
+    body=$(curl_ejbca GET "/v1/certificate/${issuer_enc}/${serial}/revocationstatus")
+    if [ "$(http_code_last)" = "$expected_code" ]; then
+        if [ -z "$expected_extra" ] || echo "$body" | grep -q "$expected_extra"; then
+            return 0
+        fi
+    fi
+    echo "    expected http=$expected_code$( [ -n "$expected_extra" ] && echo " + match $expected_extra")" >&2
+    echo "    got      http=$(http_code_last) body=$body" >&2
+    return 1
+}
+
+# ---------- service install + teardown ----------
+install_worker() {
+    # Properties string for the new DatabaseMaintenanceWorker. ServiceCreateCommand
+    # splits this on a SINGLE space (see ejbca-ejb-cli/.../ServiceCreateCommand.java
+    # line 63: `args = parameters.get(ARGS_KEY).split(" ")`), so the whole list MUST
+    # be on one line — no newlines or multi-space gaps.
+    #
+    # Cert deletion mode = REVOKED: catches r + R (any revoked-by-reason
+    # row regardless of expiry or archival status). revokeDelayTimeValue=0
+    # means "no quarantine" — sweep on next tick. reasons=SUPERSEDED means
+    # KEY_COMPROMISE-revoked rows aren't matched and survive.
+    # Worker-specific properties use the 'worker.' prefix — that's the only
+    # form `ejbca.sh service create` accepts for properties that aren't yet
+    # in the worker properties bag. DatabaseMaintenanceWorker normalises
+    # 'worker.X' -> 'X' at the start of work(), so this matches the GUI form's
+    # unprefixed convention at read time.
+    local props="workerClassPath=org.ejbca.core.model.services.workers.DatabaseMaintenanceWorker intervalClassPath=org.ejbca.core.model.services.intervals.PeriodicalInterval interval.periodical.unit=MINUTES interval.periodical.value=1 actionClassPath=org.ejbca.core.model.services.actions.NoAction worker.certDeletionMode=REVOKED worker.deleteExpiredCrls=false worker.revocationReasons=SUPERSEDED worker.revokeDelayTimeUnit=SECONDS worker.revokeDelayTimeValue=0 worker.batchSize=100 active=true"
+    ejbca_exec "$EJBCA" service create --service "$SERVICE_NAME" --properties "$props" 2>&1 \
+        | grep -v "log4j\|FIPS"
+}
+
+uninstall_worker() {
+    ejbca_exec "$EJBCA" service delete "$SERVICE_NAME" 2>&1 \
+        | grep -v "log4j\|FIPS" || true
+}
+
+# Backdate a fixture's expireDate so the row is past notAfter. Direct
+# MariaDB UPDATE — Track-2-only manipulation, not something a human
+# operator would do in production. Used by T10 (status=40 expired) and
+# T11 (status=60 archived) fixture setup.
+backdate_cert_expiry() {
+    local user="$1"
+    docker compose -f "$STACK_DIR/docker-compose.yml" exec -T mariadb \
+        mariadb -uroot -prootpw -D ejbca -e \
+        "UPDATE CertificateData SET expireDate=1 WHERE username='$user'" 2>&1 \
+        | grep -v "Warning" || true
+}
+
+# Transition a fixture's CertificateData status from REVOKED (40) to
+# ARCHIVED (60), simulating what EJBCA's post-expiry housekeeping does
+# over time. Used by T11 to prove MODE_REVOKED catches status=60 rows.
+archive_cert_status() {
+    local user="$1"
+    docker compose -f "$STACK_DIR/docker-compose.yml" exec -T mariadb \
+        mariadb -uroot -prootpw -D ejbca -e \
+        "UPDATE CertificateData SET status=60 WHERE username='$user'" 2>&1 \
+        | grep -v "Warning" || true
+}
+
+trap 'uninstall_worker' EXIT
+
+# ---------- test cases ----------
+load_target_config
+
+echo "==> 3.5 fix-27 integration test"
+echo "    Run tag:    $RUN_TAG"
+echo "    Fixtures:   $EE_SUP_A (SUPERSEDED), $EE_SUP_B (SUPERSEDED), $EE_KC_C (KEY_COMPROMISE)"
+echo "    Service:    $SERVICE_NAME (1-minute interval)"
+echo "    Tmp:        $TMP_DIR"
+echo
+
+printf "\n--- T1 — Enroll + revoke %s as SUPERSEDED ---\n" "$EE_SUP_A"
+if provision_and_revoke "$EE_SUP_A" SUPERSEDED; then record_pass "T1" "$EE_SUP_A"; else record_fail "T1" "$EE_SUP_A"; fi
+
+printf "\n--- T2 — Enroll + revoke %s as SUPERSEDED ---\n" "$EE_SUP_B"
+if provision_and_revoke "$EE_SUP_B" SUPERSEDED; then record_pass "T2" "$EE_SUP_B"; else record_fail "T2" "$EE_SUP_B"; fi
+
+printf "\n--- T3 — Enroll + revoke %s as KEY_COMPROMISE ---\n" "$EE_KC_C"
+if provision_and_revoke "$EE_KC_C" KEY_COMPROMISE; then record_pass "T3" "$EE_KC_C"; else record_fail "T3" "$EE_KC_C"; fi
+
+printf "\n--- T4 — Pre-sweep: all 3 fixtures show revoked=true ---\n"
+ok=1
+verify_revocationstatus "$EE_SUP_A" 200 '"revoked"[[:space:]]*:[[:space:]]*true' || ok=0
+verify_revocationstatus "$EE_SUP_B" 200 '"revoked"[[:space:]]*:[[:space:]]*true' || ok=0
+verify_revocationstatus "$EE_KC_C"  200 '"revoked"[[:space:]]*:[[:space:]]*true' || ok=0
+if [ "$ok" = "1" ]; then record_pass "T4" "pre-sweep state"; else record_fail "T4" "pre-sweep state"; fi
+
+printf "\n--- T5 — Install DatabaseMaintenanceWorker service ---\n"
+install_worker
+record_pass "T5" "$SERVICE_NAME installed"
+
+printf "\n--- T6 — Wait %ss for the worker to tick once ---\n" "$WORKER_WAIT_SECONDS"
+sleep "$WORKER_WAIT_SECONDS"
+record_pass "T6" "waited ${WORKER_WAIT_SECONDS}s"
+
+printf "\n--- T7 — Post-sweep: SUPERSEDED-a is GONE (404) ---\n"
+if verify_revocationstatus "$EE_SUP_A" 404 ""; then record_pass "T7" "$EE_SUP_A deleted"; else record_fail "T7" "$EE_SUP_A not deleted"; fi
+
+printf "\n--- T8 — Post-sweep: SUPERSEDED-b is GONE (404) ---\n"
+if verify_revocationstatus "$EE_SUP_B" 404 ""; then record_pass "T8" "$EE_SUP_B deleted"; else record_fail "T8" "$EE_SUP_B not deleted"; fi
+
+printf "\n--- T9 — Post-sweep: KEY_COMPROMISE-c SURVIVES (200 + revoked=true) ---\n"
+if verify_revocationstatus "$EE_KC_C" 200 '"revoked"[[:space:]]*:[[:space:]]*true'; then
+    record_pass "T9" "$EE_KC_C survived (reason filter works)"
+else
+    record_fail "T9" "$EE_KC_C not survived (reason filter failed!)"
+fi
+
+# ============================================================
+#  T10-T13 — MODE_REVOKED lifecycle-bucket coverage.
+#
+#  Under MODE_REVOKED, the worker catches every revoked-by-reason
+#  cert regardless of expiry or archival status (i.e. r + R-status-40
+#  + R-status-60). Four fresh fixtures probe each bucket:
+#    EE_R_40 (T10) — SUPERSEDED-revoked, backdated expireDate     → REAPED  (R-status-40)
+#    EE_R_60 (T11) — SUPERSEDED-revoked, backdated + status=60    → REAPED  (R-status-60)
+#    EE_R_r  (T12) — SUPERSEDED-revoked, future expireDate         → REAPED  (r)
+#    EE_E    (T13) — not revoked, backdated expireDate             → SURVIVES (E — wrong reason for MODE_REVOKED)
+#
+#  T11 is the assertion specifically proving the design fix for
+#  status=60 archived rows that the original PR missed.
+# ============================================================
+
+EE_R_40="fix27-${RUN_TAG}-r40"
+EE_R_60="fix27-${RUN_TAG}-r60"
+EE_R_r="fix27-${RUN_TAG}-r-r"
+EE_E="fix27-${RUN_TAG}-e"
+
+printf "\n--- Provisioning T10-T13 fixtures ---\n"
+provision_and_revoke "$EE_R_40" SUPERSEDED || record_fail "T10-setup" "$EE_R_40 enroll/revoke failed"
+backdate_cert_expiry "$EE_R_40"
+
+provision_and_revoke "$EE_R_60" SUPERSEDED || record_fail "T11-setup" "$EE_R_60 enroll/revoke failed"
+backdate_cert_expiry "$EE_R_60"
+archive_cert_status   "$EE_R_60"
+
+provision_and_revoke "$EE_R_r"  SUPERSEDED || record_fail "T12-setup" "$EE_R_r enroll/revoke failed"
+
+provision_and_revoke "$EE_E"    NONE       || record_fail "T13-setup" "$EE_E enroll-only failed"
+backdate_cert_expiry "$EE_E"
+
+printf "\n--- Wait %ss for the T1-T9 worker to tick (it's still installed, mode=REVOKED) ---\n" "$WORKER_WAIT_SECONDS"
+sleep "$WORKER_WAIT_SECONDS"
+
+printf "\n--- T10 — R-status-40: %s is GONE (404) — revoked + expired, not yet archived ---\n" "$EE_R_40"
+if verify_revocationstatus "$EE_R_40" 404 ""; then
+    record_pass "T10" "$EE_R_40 reaped (status=40 + expired)"
+else
+    record_fail "T10" "$EE_R_40 not reaped"
+fi
+
+printf "\n--- T11 — R-status-60: %s is GONE (404) — archived (status=60) reached by widened filter ---\n" "$EE_R_60"
+if verify_revocationstatus "$EE_R_60" 404 ""; then
+    record_pass "T11" "$EE_R_60 reaped (status=60 archived — the design-fix assertion)"
+else
+    record_fail "T11" "$EE_R_60 not reaped (status filter still excludes ARCHIVED — design fix missing)"
+fi
+
+printf "\n--- T12 — r: %s is GONE (404) — revoked + future expireDate ---\n" "$EE_R_r"
+if verify_revocationstatus "$EE_R_r" 404 ""; then
+    record_pass "T12" "$EE_R_r reaped (status=40 + future notAfter)"
+else
+    record_fail "T12" "$EE_R_r not reaped"
+fi
+
+printf "\n--- T13 — E: %s SURVIVES — not revoked, MODE_REVOKED ignores it ---\n" "$EE_E"
+if verify_revocationstatus "$EE_E" 200 '"revoked"[[:space:]]*:[[:space:]]*false'; then
+    record_pass "T13" "$EE_E survived (reason filter excludes non-revoked rows)"
+else
+    record_fail "T13" "$EE_E was reaped (should have survived under MODE_REVOKED)"
+fi
+
+# ---------- summary ----------
+echo
+echo "==================== 3.5 summary ===================="
+for line in "${SUMMARY[@]}"; do echo "  $line"; done
+echo
+printf "  Totals: PASS=%d  FAIL=%d\n" "$PASS" "$FAIL"
+echo "====================================================="
+
+[ "$FAIL" -eq 0 ]

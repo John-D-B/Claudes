@@ -87,7 +87,7 @@ For convenience, here's the GitHub publication of this tool:<br/>
 &nbsp; &nbsp; <https://github.com/John-D-B/Claudes/tree/main/2026-06-01.EJBCA-tools>
 
 The same source project also ships<br/>
-&nbsp; &nbsp; a shell helper (`Bin/1.4b-create-admin.sh`) that automates the<br/>
+&nbsp; &nbsp; a shell helper (`ejbca-ce/Bin/100.setup/104.create-admin.sh`) that automates the<br/>
 &nbsp; &nbsp; End-Entity-and-PEM-export workflow against a local EJBCA Community Edition<br/>
 &nbsp; &nbsp; container — useful as a reference implementation if you'd rather not<br/>
 &nbsp; &nbsp; click through the admin UI.

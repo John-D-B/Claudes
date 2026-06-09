@@ -1,0 +1,66 @@
+# EJBCA Community Edition — local dev stack
+#
+# Two services, two named volumes:
+#   - mariadb : EJBCA's database, persisted on the `ejbca_db` volume
+#   - ejbca   : EJBCA-CE app server, state persisted on `ejbca_data`
+#
+# See Docs/ejbca-ce-mariadb.md for rationale on the named-volume choice.
+# Image: keyfactor/ejbca-ce 9.3.7 (multi-arch; native arm64 on M-series Macs).
+
+services:
+
+  mariadb:
+    image: mariadb:11
+    container_name: ejbca-mariadb
+    restart: unless-stopped
+    environment:
+      MARIADB_DATABASE: ejbca
+      MARIADB_USER: ejbca
+      MARIADB_PASSWORD: ejbca
+      MARIADB_ROOT_PASSWORD: rootpw
+      # EJBCA requires UTF-8 throughout.
+      MARIADB_CHARSET: utf8mb4
+      MARIADB_COLLATION: utf8mb4_unicode_ci
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+    volumes:
+      - ejbca_db:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+
+  ejbca:
+    image: ejbca-ce:local-fixes         # built by ./Bin/3.3-build-local-image.sh (base: keyfactor/ejbca-ce:latest, 9.3.7)
+    container_name: ejbca-ce
+    # Stable in-container hostname. Without this, docker assigns a random
+    # 12-hex container ID as hostname, and EJBCA's bootstrap persists the
+    # server TLS keystore at /mnt/persistent/secrets/tls/<that-id>/ — which
+    # means any image swap (new container, new ID) loses the keystore
+    # provisioned by Bin/1.4e-reissue-server-cert.sh. Pinning the hostname
+    # keeps that path stable across rebuilds.
+    hostname: ejbca-ce
+    restart: unless-stopped
+    depends_on:
+      mariadb:
+        condition: service_healthy
+    environment:
+      # Override the image default (H2) with MariaDB. The image keys off the
+      # JDBC URL scheme and installs the matching driver from /opt/keyfactor/dbopt/.
+      DATABASE_JDBC_URL: jdbc:mariadb://mariadb:3306/ejbca?useSSL=false&allowPublicKeyRetrieval=true
+      DATABASE_USER: ejbca
+      DATABASE_PASSWORD: ejbca
+      # Bootstrap TLS via the image's `simple` setup (self-signed) — fine for dev.
+      TLS_SETUP_ENABLED: simple
+    volumes:
+      - ejbca_data:/mnt/persistent
+    ports:
+      - "8080:8080"     # HTTP (public, unauthenticated services)
+      - "8443:8443"     # HTTPS — Admin GUI, REST API (mTLS)
+
+volumes:
+  ejbca_db:
+  ejbca_data:
