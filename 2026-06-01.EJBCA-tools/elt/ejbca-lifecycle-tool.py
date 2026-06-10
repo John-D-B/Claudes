@@ -37,7 +37,7 @@ Original software by John Buehrer
 with AI pair-programming support by Anthropic Claude
 """
 
-__version__ = "5.5.0"
+__version__ = "5.8.0"
 
 import argparse
 import json
@@ -272,6 +272,13 @@ class EjbcaSoapBackend:
             "end_entity_profile_name":  getattr(vows, "endEntityProfileName",  "") or "",
             "certificate_profile_name": getattr(vows, "certificateProfileName", "") or "",
             "ca_name":                  getattr(vows, "caName", "") or "",
+            # camelCase aliases for downstream consumers (Fix 8 v5.8.0). Many
+            # call sites read endEntityProfile / certificateProfile rather than
+            # the snake_case names above; populating both keeps SOAP-only EE
+            # records (certless EEs after DBMS Reaper has run) from being
+            # misclassified as "(orphans)" by reads that only check camelCase.
+            "endEntityProfile":   getattr(vows, "endEntityProfileName",  "") or "",
+            "certificateProfile": getattr(vows, "certificateProfileName", "") or "",
         }
 
     def _build_user_match(self, criterion: dict) -> Optional[dict]:
@@ -985,6 +992,18 @@ class EjbcaClient:
 
         The EE search response omits profile fields. This method merges in
         profile and certificate information obtained via build_profile_map().
+
+        Two-pass enrichment:
+          1. Cert-derived: copy fields from profile_map (built from cert search).
+             Works for any EE whose certs are in the cert-search result.
+          2. ID-derived fallback (fix v5.7.0): for EEs that still have an empty
+             endEntityProfile but a non-empty endEntityProfileId after pass 1,
+             resolve the name from get_authorized_profiles(). Catches EEs whose
+             certs were issued via internal paths that don't populate the cert
+             record's endEntityProfile field — notably the ejbca-server-mtls EE
+             used for EJBCA's own server TLS identity, which previously fell
+             through to the "(orphans)" classification despite having a real,
+             well-configured profile.
         """
         enriched = 0
         cert_fields = ("endEntityProfile", "endEntityProfileId",
@@ -1000,6 +1019,41 @@ class EjbcaClient:
                     if field in pinfo:
                         ee[field] = pinfo[field]
                 enriched += 1
+
+        # Pass 2: ID → name fallback for EEs the cert-derived map missed.
+        # Only build the id-to-name dict if there are unresolved EEs to save.
+        unresolved_ids = {
+            str(ee.get("endEntityProfileId"))
+            for ee in entities
+            if not ee.get("endEntityProfile") and ee.get("endEntityProfileId")
+        }
+        unresolved_ids.discard("None")
+        unresolved_ids.discard("")
+        rescued_by_id = 0
+        if unresolved_ids:
+            try:
+                name_to_id = self.get_authorized_profiles() or {}
+                # get_authorized_profiles returns the inner dict; normalise to
+                # whatever shape the backend hands us.
+                if isinstance(name_to_id, dict) and "end_entity_profiles" in name_to_id:
+                    name_to_id = name_to_id["end_entity_profiles"]
+                id_to_name = {str(v): k for k, v in name_to_id.items()}
+                for ee in entities:
+                    if ee.get("endEntityProfile"):
+                        continue
+                    epid = ee.get("endEntityProfileId")
+                    if epid is None or epid == "":
+                        continue
+                    name = id_to_name.get(str(epid))
+                    if name:
+                        ee["endEntityProfile"] = name
+                        rescued_by_id += 1
+            except Exception as e:
+                log.debug(f"ID→name profile resolution failed: {e}")
+            if rescued_by_id:
+                log.info(f"ID→name fallback resolved {rescued_by_id} "
+                         f"additional entit{'y' if rescued_by_id == 1 else 'ies'}"
+                         f" (e.g. ejbca-server-mtls)")
 
         log.info(f"Enriched {enriched}/{len(entities)} entities with "
                  f"profile + cert data (via certificate search)")
@@ -3898,6 +3952,16 @@ def build_parser() -> argparse.ArgumentParser:
 """
 
     epilog = """
+status codes (cert table 'S' column and count-line breakdown):
+  A   active                  — certificate is not revoked, not expired
+  E   expired (not revoked)   — cert is past notAfter, never revoked
+  R   revoked + expired       — cert is revoked AND past notAfter (prunable from CRL)
+  r   revoked + unexpired     — cert is revoked, still within validity (CRL must carry)
+  ?   unknown                 — status doesn't map to the four above
+
+  Count-line example (list -d4):
+    Certificates:  35:  1:A active,  7:E expired,  20:R revoked+expired,  7:r revoked+unexpired
+
 examples:
   # Connection via environment variables
   $ export ELT_HOST=ejbca.example.com               # --ejbca-host
