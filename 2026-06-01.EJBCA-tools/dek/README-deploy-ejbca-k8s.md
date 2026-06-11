@@ -120,7 +120,7 @@ Configure once, then run:
 
 ```text
 $ deploy_ejbca_k8s.py set --preset local-fixes
-$ deploy
+$ deploy_ejbca_k8s.py show
 $ deploy_ejbca_k8s.py do
 ```
 
