@@ -61,7 +61,7 @@ No new Python dependencies are introduced. The script shells out to the<br/>
 
 ### RA-credential resolution
 
-Access to EJBCA via the REST-API requires an **RA Credendtial** certificates and key.<br/>
+Access to EJBCA via the REST-API requires an **RA Credential** certificates and key.<br/>
 The script provides three ways to supply the RA credential, in precedence order:
 
 1. `--ra-cred CERT_PATH,KEY_PATH` flag.
