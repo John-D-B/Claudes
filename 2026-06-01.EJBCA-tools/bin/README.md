@@ -11,14 +11,16 @@ This directory holds symlinks to the three publishable Python scripts in this<br
 ```
 # Get the software:
 $ git clone https://github.com/John-D-B/Claudes.git
-$ dir="$PWD/Claudes/2026-06-01.EJBCA-tools"
-$ export PATH="$dir/bin:$PATH"
 
-# Install Python requirements:
-$ cd "$dir"
+# One-shot setup — certs/local dirs, venv, requirements, PATH, cd into bundle.
+# Source it from here (the dir you cloned into) so it persists in your shell:
+$ source ./Claudes/2026-06-01.EJBCA-tools/bin/setup.sh
+
+# ── or do those steps by hand: ──
+$ cd Claudes/2026-06-01.EJBCA-tools
+$ export PATH="$PWD/bin:$PATH"
 $ pip install -r ./cg/requirements.txt
-$ # (not needed for deploy_ejbca_k8s.py — stdlib only)
-$ pip install -r ./elt/requirements.txt
+$ pip install -r ./elt/requirements.txt   # (deploy_ejbca_k8s.py needs none — stdlib only)
 
 # Confirm the scripts run by showing their versions:
 $ cert-grep.py --version
@@ -40,6 +42,7 @@ The symlink layout keeps `bin/` as a single flat namespace for your shell,<br/>
 | `deploy_ejbca_k8s.py` | `../dek/deploy_ejbca_k8s.py` | Deploys cert-manager + the EJBCA cert-manager-issuer into a Kubernetes cluster,<br/>then issues a test certificate end-to-end against an EJBCA backend. |
 | `ejbca-lifecycle-tool.py` | `../elt/ejbca-lifecycle-tool.py` | **ELT.** Direct EJBCA REST/SOAP client for listing, enrolling, revoking,<br/>&nbsp; &nbsp; and reaping End Entities and certificates. |
 | `cert-grep.py` | `../cg/cert-grep.py` | Standalone X.509 diagnostic.<br/>Reads PEM (or DER) on stdin or by path, emits a chosen `summary_N` view of the cert internals.<br/>Used as a better alternative to `openssl x509 -text -noout`. |
+| `ssl-grep.py` | `../cg/ssl-grep.py` | Standalone X.509 diagnostic.<br/>This tool makes an SSL/TLS connection to an https URL,<br/> &nbsp; &nbsp; and sends the certificate data to `cert-grep`.<br/>Used as a better alternative to `openssl s_client`. |
 
 Each tool ships with its own `--help` and a top-level docstring that describes<br/>
 &nbsp; &nbsp; its full feature set. Run `<tool>.py --help` for the authoritative list of<br/>
@@ -86,6 +89,7 @@ The opening quick-start block above shows how to install these via<br/>
 - `$dir/dek/deploy_ejbca_k8s.py`
 - `$dir/elt/ejbca-lifecycle-tool.py`
 - `$dir/cg/cert-grep.py`
+- `$dir/cg/ssl-grep.py`
 
 <br/>
 

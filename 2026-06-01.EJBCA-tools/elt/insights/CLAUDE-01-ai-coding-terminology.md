@@ -35,7 +35,7 @@ turn-by-turn supervision.
 ## Where CertGrep Development Sits
 
 Between **AI Pair Programming** and **AI Agentic Coding**, with a notable
-characteristic: explicit session hygiene (handover docs, version
+characteristic: explicit session diligence (handover docs, version
 discipline, deliberate context management).  That's actually more
 sophisticated than most agentic setups, which just throw the whole
 repo at the AI and hope.

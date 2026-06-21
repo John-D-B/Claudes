@@ -71,6 +71,10 @@ An X.509 certificate has a defined lifecycle: it is requested, issued, deployed,
 
 ---
 
+To see ELT in a full end-to-end story (EJBCA-CE stack + PR verification + renewal-accumulation cleanup), see [`../ejbca-ce/DEMO.md`](../ejbca-ce/DEMO.md).
+
+---
+
 ## The ejbca-lifecycle-tool.py Tool
 
 `ejbca-lifecycle-tool.py` is a Python command-line tool that communicates securely with EJBCA using its REST API and mTLS client certificate authentication — the same access control mechanism used by cert-manager itself. No direct database access or admin shell is required.

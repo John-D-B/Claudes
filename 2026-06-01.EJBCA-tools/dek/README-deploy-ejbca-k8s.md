@@ -24,6 +24,9 @@ This deploy script can share configuration variables with my partner script **EL
 
 This deploy script works best when **cert-grep.py** is available in the `$PATH`.<br/>
 
+To see this tool in a full end-to-end story (EJBCA-CE stack + PR verification +<br/>
+&nbsp; &nbsp; renewal-accumulation cleanup), see [`../ejbca-ce/DEMO.md`](../ejbca-ce/DEMO.md).<br/>
+
 <br/>
 
 ## What you get
@@ -87,7 +90,7 @@ For convenience, here's the GitHub publication of this tool:<br/>
 &nbsp; &nbsp; <https://github.com/John-D-B/Claudes/tree/main/2026-06-01.EJBCA-tools>
 
 The same source project also ships<br/>
-&nbsp; &nbsp; a shell helper (`ejbca-ce/Bin/100.setup/104.create-admin.sh`) that automates the<br/>
+&nbsp; &nbsp; a shell helper (`ejbca-ce/Bin/210.bootstrap/214.create-admin.sh`) that automates the<br/>
 &nbsp; &nbsp; End-Entity-and-PEM-export workflow against a local EJBCA Community Edition<br/>
 &nbsp; &nbsp; container — useful as a reference implementation if you'd rather not<br/>
 &nbsp; &nbsp; click through the admin UI.

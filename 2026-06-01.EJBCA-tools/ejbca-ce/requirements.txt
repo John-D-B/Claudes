@@ -1,0 +1,18 @@
+# EJBCA-CE DEV — project-wide Python dependencies
+#
+# Union of the bundle tool manifests, so the project .venv runs every tool:
+#   - elt/requirements.txt  (ejbca-lifecycle-tool.py — REST + SOAP backend)
+#   - cg/requirements.txt   (cert-grep.py / ssl-grep.py)
+#
+# Rebuild the venv with:
+#   python3 -m venv .venv
+#   ./.venv/bin/pip install -r requirements.txt
+
+# -- ELT (ejbca-lifecycle-tool.py) --
+requests>=2.28.0
+urllib3>=1.26.0
+PyYAML>=5.3.1          # optional: -f <issuer-yaml>; ELT has a fallback parser
+zeep>=4.0.0           # optional: SOAP backend (CE / -z), lazily imported
+
+# -- cert-grep.py / ssl-grep.py --
+cryptography>=42.0

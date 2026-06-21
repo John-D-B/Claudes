@@ -1,0 +1,100 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 760 620" font-family="-apple-system, Helvetica, sans-serif" font-size="13">
+  <style>
+    .sect { font-weight: 700; }
+    .warn { fill: #A00; font-weight: 700; font-size: 12px; }
+    .it   { font-style: italic; fill:#444; font-size:12px; }
+    .lbl  { fill:#222; }
+    .rlbl { fill:#222; text-anchor: end; }
+    .row0 { fill:#F7F9FF; }
+    .row1 { fill:#E5ECFF; }
+    .yel  { fill:#FFF3D6; }
+    .note { fill:#666; font-size:11px; }
+    .tagE { fill:#1f3a68; font-weight:700; font-size:11px; }
+    .tagR { fill:#1f3a68; font-weight:700; font-size:11px; }
+  </style>
+
+  <!-- Header (existing pattern, untouched) -->
+  <rect x="40" y="20" width="680" height="28" class="row1"/>
+  <text x="295" y="38" class="rlbl">Select Worker</text>
+  <rect x="305" y="25" width="200" height="18" fill="#fff" stroke="#999"/>
+  <text x="315" y="38" class="lbl">Database Maintenance Worker ▾</text>
+
+  <rect x="40" y="48" width="680" height="28" class="row0"/>
+  <text x="295" y="66" class="rlbl sect">Database Maintenance Worker Settings</text>
+  <text x="315" y="66" class="warn">Caution! This worker permanently deletes certificates and CRL's from the database.</text>
+
+  <rect x="40" y="76" width="680" height="60" class="row1"/>
+  <text x="295" y="94" class="rlbl">CAs to Check</text>
+  <rect x="315" y="82" width="200" height="50" fill="#fff" stroke="#999"/>
+  <text x="325" y="96" class="lbl">ManagementCA</text>
+
+  <!-- Certificate deletion mode (bold header) -->
+  <rect x="40" y="136" width="680" height="28" class="row0"/>
+  <text x="295" y="154" class="rlbl sect">Certificate deletion mode</text>
+  <text x="320" y="154" class="it">Pick one. Only the selected mode's yellow panel below is visible at runtime.</text>
+
+  <!-- Radio 1: E — uniform Row1 background -->
+  <rect x="40" y="164" width="680" height="28" class="row1"/>
+  <text x="295" y="182" class="rlbl">Delete expired certificates  (E + R)</text>
+  <circle cx="352" cy="178" r="7" fill="#fff" stroke="#666"/>
+  <text x="378" y="182" class="note">— normal mode</text>
+
+  <!-- Radio 2: R — uniform Row1 background -->
+  <rect x="40" y="192" width="680" height="28" class="row1"/>
+  <text x="295" y="210" class="rlbl">Delete revoked certificates  (r + R)</text>
+  <circle cx="352" cy="206" r="7" fill="#fff" stroke="#666"/>
+  <text x="378" y="210" class="note">— cleanup mode (for accumulated revoked-by-reason zombies)</text>
+
+  <!-- Radio 3: None — uniform Row1 background -->
+  <rect x="40" y="220" width="680" height="28" class="row1"/>
+  <text x="295" y="238" class="rlbl">None  (CRL deletions only)</text>
+  <circle cx="352" cy="234" r="7" fill="#fff" stroke="#666"/>
+
+  <!-- Yellow panel for [E] when selected -->
+  <rect x="40" y="252" width="680" height="56" class="row0"/>
+  <rect x="305" y="252" width="415" height="56" class="yel"/>
+  <text x="320" y="270" class="tagE">When "Delete expired certificates" is selected:</text>
+  <text x="295" y="294" class="rlbl">Delay after expiration</text>
+  <rect x="345" y="281" width="40" height="18" fill="#fff" stroke="#999"/>
+  <text x="365" y="294" text-anchor="middle" class="lbl">30</text>
+  <rect x="392" y="281" width="74" height="18" fill="#fff" stroke="#999"/>
+  <text x="429" y="294" text-anchor="middle" class="lbl">Days ▾</text>
+
+  <!-- Yellow panel for [R] when selected -->
+  <rect x="40" y="316" width="680" height="120" class="row1"/>
+  <rect x="305" y="316" width="415" height="120" class="yel"/>
+  <text x="320" y="334" class="tagR">When "Delete revoked certificates" is selected:</text>
+
+  <text x="295" y="358" class="rlbl">Delay after revocation</text>
+  <rect x="345" y="345" width="40" height="18" fill="#fff" stroke="#999"/>
+  <text x="365" y="358" text-anchor="middle" class="lbl">1</text>
+  <rect x="392" y="345" width="74" height="18" fill="#fff" stroke="#999"/>
+  <text x="429" y="358" text-anchor="middle" class="lbl">hours ▾</text>
+
+  <text x="295" y="386" class="rlbl">Revocation reasons</text>
+  <rect x="345" y="372" width="200" height="60" fill="#fff" stroke="#999"/>
+  <text x="355" y="386" class="lbl">Unspecified</text>
+  <text x="355" y="402" class="lbl">Key Compromise</text>
+  <rect x="347" y="406" width="196" height="16" fill="#cfe2ff"/>
+  <text x="355" y="418" class="lbl" font-weight="700">Superseded</text>
+  <text x="355" y="434" class="lbl">Cessation of Operation</text>
+
+  <!-- CRL match criteria — independent of cert mode -->
+  <rect x="40" y="444" width="680" height="28" class="row0"/>
+  <text x="295" y="462" class="rlbl sect">CRL match criteria</text>
+
+  <rect x="40" y="472" width="680" height="28" class="row1"/>
+  <text x="295" y="490" class="rlbl">Match expired CRLs</text>
+  <rect x="345" y="479" width="14" height="14" fill="#fff" stroke="#666"/>
+  <path d="M348 486 l3 4 l5 -7" stroke="#1f3a68" stroke-width="2" fill="none"/>
+
+  <rect x="40" y="500" width="680" height="28" class="row0"/>
+  <text x="295" y="518" class="rlbl">Entries to delete per run</text>
+  <rect x="345" y="505" width="60" height="18" fill="#fff" stroke="#999"/>
+  <text x="375" y="518" text-anchor="middle" class="lbl">100</text>
+
+  <text x="40" y="554" class="it" fill="#666">Notes:</text>
+  <text x="40" y="570" class="note">• Both yellow panels stay visible in the live form. The "When X is selected:" headers are real form labels — they tell</text>
+  <text x="40" y="586" class="note">  the operator exactly which mode each sub-field belongs to. The radio button determines which mode actually runs.</text>
+  <text x="40" y="602" class="note">• Sub-fields in both panels remain editable — operators can configure both modes' settings and switch via the radio without losing values.</text>
+</svg>

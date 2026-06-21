@@ -1,0 +1,19 @@
+# coredns-custom.yaml — map host.k3d.internal to the host gateway inside the cluster.
+# version='1.0.0'
+#
+# k3s/k3d CoreDNS merges extra server blocks from a ConfigMap named 'coredns-custom'
+# in kube-system. This rewrites host.k3d.internal -> host.docker.internal (the Docker
+# Desktop host gateway), so in-cluster cert-manager reaches the EJBCA-CE server on the
+# host. After applying, restart CoreDNS:
+#   kubectl -n kube-system rollout restart deployment/coredns
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: coredns-custom
+  namespace: kube-system
+data:
+  k3dhost.server: |
+    host.k3d.internal:53 {
+        rewrite name host.k3d.internal host.docker.internal
+        forward . /etc/resolv.conf
+    }
