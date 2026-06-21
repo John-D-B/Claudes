@@ -4,9 +4,10 @@
 # the local CE stack. This is the scripted form of storyboard step B06; the
 # B06 "Manual" block is this script's transcript — keep the two in lockstep.
 #
-# The ELT-Admin client cert and ManagementCA are copied from Creds/elt/.
-# The server cert lives only inside the container keystore (server.jks), so it
-# is exported with keytool; the store password is generated per install and
+# The ELT-Admin client cert and ManagementCA are written straight into $certsDir
+# by 214 (no in-repo Creds/elt staging). This script adds the server cert and the
+# env file. The server cert lives only inside the container keystore (server.jks),
+# so it is exported with keytool; the store password is generated per install and
 # read from server.storepasswd at runtime (no openssl, no live handshake).
 #
 # Lives in Bin/220.certs/ — its own decade bucket, NOT Bin/210.bootstrap/ — so the
@@ -17,7 +18,9 @@
 #        certs-dir defaults to $certsDir, else /tmp/claude/demo/certs.
 #        Afterwards:  source $localDir/ce-target.env   (path printed at the end)
 
-version='1.0.0'
+version='1.3.0'   # 1.3.0 — self-log to $logDir/B06-collect-certs.log (the run book's named log).
+                  # 1.2.0 — localDir defaults out-of-repo (/tmp/claude/demo/local), not $ROOT_DIR/local
+                  # 1.1.0 — 214 writes friendly names to $certsDir; this no longer copies Creds/elt
 
 set -euo pipefail
 
@@ -26,22 +29,25 @@ ROOT_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
 cd "$ROOT_DIR"
 
 certsDir="${1:-${certsDir:-/tmp/claude/demo/certs}}"
-localDir="${localDir:-$ROOT_DIR/local}"
+localDir="${localDir:-/tmp/claude/demo/local}"   # out-of-repo, like certsDir (never $ROOT_DIR/local)
 COMPOSE="./stack/docker-compose.yml"
 ENV_FILE="$localDir/ce-target.env"
 
 mkdir -p "$certsDir" "$localDir"
 
-echo "=== Collecting demo certs into $certsDir ==="
+# Self-log this run to $logDir (out-of-repo); trap drains tee so no false "hang".
+logDir="${logDir:-/tmp/claude/demo/logs}"; mkdir -p "$logDir"
+exec > >(tee "$logDir/B06-collect-certs.log") 2>&1
+TEE_PID=$!
+trap 'exec 1>&- 2>&-; wait "$TEE_PID" 2>/dev/null || true' EXIT
+echo "=== logging to $logDir/B06-collect-certs.log ==="
 
-# 1. ELT-Admin client cert + ManagementCA — straight from Creds/elt/.
-cp Creds/elt/ce-eltadmin.crt       "$certsDir/ELT-Admin.crt"
-cp Creds/elt/ce-eltadmin.key       "$certsDir/ELT-Admin.key"
-cp Creds/elt/ce-eltadmin.p12       "$certsDir/ELT-Admin.p12"
-cp Creds/elt/ce-eltadmin.password  "$certsDir/ELT-Admin.password"
-cp Creds/elt/ce-managementca.crt   "$certsDir/ManagementCA.crt"
+echo "=== Finalising demo certs in $certsDir ==="
 
-# 2. Server cert: export the leaf (alias host.k3d.internal) from the keystore.
+# 214 already wrote ELT-Admin.{crt,key,p12,password} + ManagementCA.crt straight
+# into $certsDir (no in-repo staging). Here we add the server cert + the env file.
+
+# 1. Server cert: export the leaf (alias host.k3d.internal) from the keystore.
 echo "  exporting server cert via keytool (alias host.k3d.internal)"
 docker compose -f "$COMPOSE" exec -T ejbca \
     sh -c 'keytool -exportcert -rfc -alias host.k3d.internal \

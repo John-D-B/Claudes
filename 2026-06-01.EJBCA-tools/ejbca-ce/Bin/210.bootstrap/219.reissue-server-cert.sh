@@ -28,9 +28,17 @@
 # Idempotent: the EE-add step retries with delete+re-add if it already exists.
 # Safe to re-run.
 
-version='1.1.0'
+version='1.2.0'   # 1.2.0 — self-log to $logDir/B05-reissue-cert.log
+                  # 1.1.0 — prior
 
 set -euo pipefail
+
+# Self-log this run to $logDir (out-of-repo); trap drains tee so no false "hang".
+logDir="${logDir:-/tmp/claude/demo/logs}"; mkdir -p "$logDir"
+exec > >(tee "$logDir/B05-reissue-cert.log") 2>&1
+TEE_PID=$!
+trap 'exec 1>&- 2>&-; wait "$TEE_PID" 2>/dev/null || true' EXIT
+echo "=== logging to $logDir/B05-reissue-cert.log ==="
 
 # Default to host.k3d.internal so localhost-ownership conflicts on the operator
 # machine do not bite. Override with HOST=... on the command line. For local DEV,

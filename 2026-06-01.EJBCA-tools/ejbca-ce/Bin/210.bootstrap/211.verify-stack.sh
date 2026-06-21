@@ -10,9 +10,17 @@
 #
 # Idempotent and read-only. Safe to re-run any time.
 
-version='1.2.0'   # 1.2.0 — 8080 health probe fully non-fatal (handles 000 / missing body)
+version='1.3.0'   # 1.3.0 — self-log to $logDir/B05-verify-stack.log
+                  # 1.2.0 — 8080 health probe fully non-fatal (handles 000 / missing body)
 
 set -euo pipefail
+
+# Self-log this run to $logDir (out-of-repo); trap drains tee so no false "hang".
+logDir="${logDir:-/tmp/claude/demo/logs}"; mkdir -p "$logDir"
+exec > >(tee "$logDir/B05-verify-stack.log") 2>&1
+TEE_PID=$!
+trap 'exec 1>&- 2>&-; wait "$TEE_PID" 2>/dev/null || true' EXIT
+echo "=== logging to $logDir/B05-verify-stack.log ==="
 
 # Default to host.k3d.internal so localhost-ownership conflicts on the operator
 # machine do not bite. Override with HOST=... on the command line. For local DEV,

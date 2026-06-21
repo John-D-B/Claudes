@@ -4,11 +4,20 @@
 # AND the Certificate profile (via an exportprofiles round-trip). Fail-fast
 # gate before 219.reissue-server-cert.sh, which uses both.
 
-version='1.2.0'   # 1.2.0 — call ELT via PATH (bundle layout), not ./.venv/./elt.
+version='1.4.0'   # 1.4.0 — self-log to $logDir/B05-verify-profiles.log
+                  # 1.3.0 — creds from out-of-repo $certsDir (was ./Creds/elt).
+                  # 1.2.0 — call ELT via PATH (bundle layout), not ./.venv/./elt.
                   # 1.1.0 — also verify the Certificate profile, not just the
                   #         End Entity profile (now that 107 imports both).
 
 set -euo pipefail
+
+# Self-log this run to $logDir (out-of-repo); trap drains tee so no false "hang".
+logDir="${logDir:-/tmp/claude/demo/logs}"; mkdir -p "$logDir"
+exec > >(tee "$logDir/B05-verify-profiles.log") 2>&1
+TEE_PID=$!
+trap 'exec 1>&- 2>&-; wait "$TEE_PID" 2>/dev/null || true' EXIT
+echo "=== logging to $logDir/B05-verify-profiles.log ==="
 
 HOST="${HOST:-host.k3d.internal}"
 EE_PROFILE="${1:-ELT-Server-End-Entity}"
@@ -21,8 +30,9 @@ cd "$ROOT_DIR"
 # Run ELT the way setup.sh + the storyboard document it: by name via $PATH
 # (bin/ symlink), with the venv active. No DEV-relative ./.venv or ./elt paths.
 ELT="ejbca-lifecycle-tool.py"
-CERT="./Creds/elt/ce-eltadmin.crt"
-KEY="./Creds/elt/ce-eltadmin.key"
+certsDir="${certsDir:-/tmp/claude/demo/certs}"   # out-of-repo creds (written by 214)
+CERT="$certsDir/ELT-Admin.crt"
+KEY="$certsDir/ELT-Admin.key"
 COMPOSE="./stack/docker-compose.yml"
 EJBCA="/opt/keyfactor/bin/ejbca.sh"
 VDIR="/tmp/verify-profiles"

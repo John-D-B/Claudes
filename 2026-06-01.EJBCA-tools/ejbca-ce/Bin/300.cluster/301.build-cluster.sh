@@ -5,7 +5,7 @@
 #
 # Re-runnable: deletes any existing cluster of the same name first.
 
-version='1.0.0'
+version='1.1.0'   # 1.1.0 — self-log to $logDir/C01-build-cluster.log (the run book's named log).
 
 set -euo pipefail
 
@@ -13,6 +13,13 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 ROOT_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
 cd "$ROOT_DIR"
 CLUSTER="${CLUSTER:-ejbca-test}"
+
+# Self-log this run to $logDir (out-of-repo); trap drains tee so no false "hang".
+logDir="${logDir:-/tmp/claude/demo/logs}"; mkdir -p "$logDir"
+exec > >(tee "$logDir/C01-build-cluster.log") 2>&1
+TEE_PID=$!
+trap 'exec 1>&- 2>&-; wait "$TEE_PID" 2>/dev/null || true' EXIT
+echo "=== logging to $logDir/C01-build-cluster.log ==="
 
 echo "=== [1/3] Create the k3d cluster '$CLUSTER' ==="
 k3d cluster delete "$CLUSTER" >/dev/null 2>&1 || true

@@ -13,12 +13,13 @@
 #   2. Sourceable config file (Desktop App use case):
 #        ./Bin/elt/ee-target.env       (see ee-target.env.example)
 #
-# CE target uses ./Creds/elt/ce-eltadmin.{crt,key} (the canonical layout
-# produced by step 1.4b).
+# CE target uses the certs in $certsDir (ELT-Admin.*), via the ELT_* vars in
+# local/ce-target.env — written by 214 + 221 during the build.
 #
 # Exit code: 0 if all automated PASS, 1 if any FAIL or HUMAN-review needed.
 
-version='2.1.0'   # 2.1.0 — call ELT via PATH (bundle layout), not ./.venv/./elt
+version='2.2.0'   # 2.2.0 — localDir default out-of-repo (/tmp/claude/demo/local), not ./local
+                  # 2.1.0 — call ELT via PATH (bundle layout), not ./.venv/./elt
 
 set -euo pipefail
 
@@ -85,7 +86,7 @@ run_review() {
 # 5.7 EE-side when ee-target.env hasn't been created).
 load_target_config() {
     local target="$1"
-    local cfg="${localDir:-./local}/${target}-target.env"
+    local cfg="${localDir:-/tmp/claude/demo/local}/${target}-target.env"
     if [ -f "$cfg" ]; then
         echo "Sourcing $target target from $cfg"
         # Clear any inherited ELT_* vars so the file's values are authoritative.
@@ -96,7 +97,7 @@ load_target_config() {
     if [ -z "${ELT_HOST:-}" ] || [ -z "${ELT_CERT:-}" ] || [ -z "${ELT_KEY:-}" ]; then
         echo "ERROR: $target target not configured. Either create $cfg" >&2
         if [ "$target" = "ee" ]; then
-            echo "       (copy Bin/elt/ee-target.env.example to ${localDir:-./local}/ee-target.env)," >&2
+            echo "       (copy Bin/elt/ee-target.env.example to ${localDir:-/tmp/claude/demo/local}/ee-target.env)," >&2
         fi
         echo "       or export ELT_HOST, ELT_CERT, ELT_KEY in your shell." >&2
         exit 3

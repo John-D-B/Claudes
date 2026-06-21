@@ -1,41 +1,43 @@
 #!/usr/bin/env bash
-# 212.bootstrap-superadmin.sh — re-issue the auto-bootstrapped SuperAdmin
-# client P12 from the keyfactor/ejbca-ce image.
+# 212.bootstrap-superadmin.sh — refresh the auto-bootstrapped SuperAdmin end
+# entity (flip status to NEW + batch), and export its keystore to $certsDir as
+# SuperAdmin.{jks,p12,password} for EJBCA admin work that needs SuperAdmin
+# rather than the day-to-day ELT-Admin (214).
 #
-# Workflow context: this was the first attempt at producing a usable admin
-# cert for the local CE stack. The cert it generates is for the end entity
-# the image auto-bootstraps (CN = the container hostname), which the image
-# also uses as its server cert — same DN on both sides. That collision
-# triggered WildFly's mTLS handler to silently drop the connection, which
-# we eventually traced in step 1.4d.
-#
-# 1.4b superseded this approach by creating a distinct end entity
-# (CN=ELT-Admin) whose DN doesn't clash with the server cert. The current
-# operational flow uses 1.4b, not this script.
-#
-# This script remains in the workflow record. Its output lives in
-# ./Creds/1.4/ alongside the other artifacts from this attempt.
+# Workflow context: the cert this regenerates is for the EE the image
+# auto-bootstraps (CN = the container hostname), which the image also uses as
+# its server cert — same DN on both sides. That collision triggers WildFly's
+# mTLS handler to drop the connection, so day-to-day admin uses a distinct end
+# entity (214, CN=ELT-Admin). The SuperAdmin keystore is still handy for some
+# admin tasks, so it is kept in $certsDir — out-of-repo, never in the clone.
 #
 # Safe to re-run — flips the EE status back to NEW each time.
 
-version='1.0.0'
+version='1.3.0'   # 1.3.0 — self-log to $logDir/B05-superadmin.log
+                  # 1.2.0 — export SuperAdmin keystore to out-of-repo $certsDir
+                  # 1.1.0 — drop the unused in-repo Creds/1.4 host copy
 
 set -euo pipefail
 
+# Self-log this run to $logDir (out-of-repo); trap drains tee so no false "hang".
+logDir="${logDir:-/tmp/claude/demo/logs}"; mkdir -p "$logDir"
+exec > >(tee "$logDir/B05-superadmin.log") 2>&1
+TEE_PID=$!
+trap 'exec 1>&- 2>&-; wait "$TEE_PID" 2>/dev/null || true' EXIT
+echo "=== logging to $logDir/B05-superadmin.log ==="
+
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 STACK_DIR="$(cd "$SCRIPT_DIR/../../stack" && pwd)"
-# Workflow artifacts from step 1.4 — see ./Creds/1.4/.
-OUT_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)/Creds/1.4"
+certsDir="${certsDir:-/tmp/claude/demo/certs}"   # out-of-repo; never inside the clone
 
 ADMIN_PASS="ejbcadev"            # dev-only password (>= 6 chars for keytool/P12)
 EJBCA="/opt/keyfactor/bin/ejbca.sh"
 
-mkdir -p "$OUT_DIR"
+mkdir -p "$certsDir"
 cd "$STACK_DIR"
 
 # The admin end entity username is the EJBCA container's hostname.
-# The minimal image lacks `hostname` and `cat`, so query from the host side
-# via docker inspect.
+# The minimal image lacks `hostname`/`cat`, so query from the host via inspect.
 ADMIN_USER="$(docker inspect -f '{{.Config.Hostname}}' ejbca-ce)"
 if [ -z "$ADMIN_USER" ]; then
     echo "ERROR: could not determine EJBCA container hostname" >&2
@@ -47,13 +49,12 @@ echo "==> Setting password (clear) and status=NEW"
 docker compose exec -T ejbca "$EJBCA" ra setclearpwd "$ADMIN_USER" "$ADMIN_PASS"
 docker compose exec -T ejbca "$EJBCA" ra setendentitystatus "$ADMIN_USER" 10
 
-echo "==> Running ejbca.sh batch to regenerate keystore"
-docker compose exec -T ejbca "$EJBCA" batch "$ADMIN_USER"
+echo "==> Running ejbca.sh batch to regenerate the keystore"
+docker compose exec -T ejbca "$EJBCA" batch "$ADMIN_USER" 2>&1 \
+    | grep -E "Generating|Created|generated|ERROR" | grep -v "log4j\|FIPS" || true
 
+# --- export the keystore to $certsDir as SuperAdmin.{jks,p12,password} ---
 echo "==> Locating generated keystore inside container"
-# EJBCA writes to /opt/keyfactor/p12/<username>.<ext>. Despite the class
-# name BatchMakeP12Command, the actual format follows the end entity's
-# tokenType — auto-bootstrap defaults to JKS, which we convert on the host.
 KS_IN_CONTAINER=$(docker compose exec -T ejbca sh -c '
     for ext in p12 jks; do
         f="/opt/keyfactor/p12/'"$ADMIN_USER"'.$ext"
@@ -61,61 +62,48 @@ KS_IN_CONTAINER=$(docker compose exec -T ejbca sh -c '
     done
     ls /opt/keyfactor/p12/*.p12 /opt/keyfactor/p12/*.jks 2>/dev/null | head -1
 ' | tr -d '\r')
-
 if [ -z "$KS_IN_CONTAINER" ]; then
     echo "ERROR: no keystore found in /opt/keyfactor/p12/ after batch." >&2
     docker compose logs --tail 20 ejbca
     exit 1
 fi
-
 KS_EXT="${KS_IN_CONTAINER##*.}"
-echo "==> Found: $KS_IN_CONTAINER (format: $KS_EXT)"
+echo "==> Found keystore: $KS_IN_CONTAINER (format: $KS_EXT)"
 
-JKS_LOCAL="$OUT_DIR/superadmin.jks"
-P12_LOCAL="$OUT_DIR/superadmin.p12"
+JKS_OUT="$certsDir/SuperAdmin.jks"
+P12_OUT="$certsDir/SuperAdmin.p12"
+printf '%s' "$ADMIN_PASS" > "$certsDir/SuperAdmin.password"
+chmod 600 "$certsDir/SuperAdmin.password"
 
+# Copy the keystore in its native format, then emit the other format too, so
+# both SuperAdmin.jks and SuperAdmin.p12 are available regardless of source.
 if [ "$KS_EXT" = "p12" ]; then
-    echo "==> Copying P12 directly to host: $P12_LOCAL"
-    docker compose cp "ejbca:$KS_IN_CONTAINER" "$P12_LOCAL"
-else
-    echo "==> Copying JKS to host, then converting to P12"
-    docker compose cp "ejbca:$KS_IN_CONTAINER" "$JKS_LOCAL"
-    rm -f "$P12_LOCAL"
+    docker compose cp "ejbca:$KS_IN_CONTAINER" "$P12_OUT"
+    rm -f "$JKS_OUT"
     keytool -importkeystore \
-        -srckeystore "$JKS_LOCAL" -srcstoretype JKS -srcstorepass "$ADMIN_PASS" \
-        -destkeystore "$P12_LOCAL" -deststoretype PKCS12 -deststorepass "$ADMIN_PASS" \
+        -srckeystore  "$P12_OUT" -srcstoretype  PKCS12 -srcstorepass  "$ADMIN_PASS" \
+        -destkeystore "$JKS_OUT" -deststoretype JKS    -deststorepass "$ADMIN_PASS" \
+        -noprompt 2>&1 | grep -v '^$' || true
+else
+    docker compose cp "ejbca:$KS_IN_CONTAINER" "$JKS_OUT"
+    rm -f "$P12_OUT"
+    keytool -importkeystore \
+        -srckeystore  "$JKS_OUT" -srcstoretype  JKS    -srcstorepass  "$ADMIN_PASS" \
+        -destkeystore "$P12_OUT" -deststoretype PKCS12 -deststorepass "$ADMIN_PASS" \
         -noprompt 2>&1 | grep -v '^$' || true
 fi
 
-if [ ! -s "$P12_LOCAL" ]; then
-    echo "ERROR: P12 missing or empty after copy/convert" >&2
+if [ ! -s "$P12_OUT" ] || [ ! -s "$JKS_OUT" ]; then
+    echo "ERROR: SuperAdmin keystore export incomplete" >&2
     exit 1
 fi
 
-# Also split to PEM for completeness — these were the admin.crt/admin.key/ca.crt
-# files produced by the original 1.4 flow.
-openssl pkcs12 -in "$P12_LOCAL" -nokeys -clcerts -passin "pass:$ADMIN_PASS" \
-    -out "$OUT_DIR/admin.crt" 2>/dev/null
-openssl pkcs12 -in "$P12_LOCAL" -nocerts  -nodes   -passin "pass:$ADMIN_PASS" \
-    -out "$OUT_DIR/admin.key" 2>/dev/null
-openssl pkcs12 -in "$P12_LOCAL" -cacerts  -nokeys  -passin "pass:$ADMIN_PASS" \
-    -out "$OUT_DIR/ca.crt" 2>/dev/null
-
-# Show cert subject so the user can confirm what got issued.
 echo
-echo "==> P12 contents (subject and validity):"
-openssl pkcs12 -in "$P12_LOCAL" -nokeys -clcerts -passin "pass:$ADMIN_PASS" 2>/dev/null \
-    | openssl x509 -noout -subject -issuer -dates 2>/dev/null
-
-cat <<EOF
-
-==================== 1.4 complete ====================
-  P12 file:   $P12_LOCAL
-  Password:   $ADMIN_PASS
-  Username:   $ADMIN_USER
-
-NOTE: this admin cert shares its subject DN with the EJBCA server cert.
-That collision triggers mTLS failures in some clients. 1.4b's eltadmin
-(CN=ELT-Admin) was created with a distinct DN to work around this.
-======================================================
-EOF
+echo "==================== 212 complete ===================="
+echo "  SuperAdmin EE '$ADMIN_USER' refreshed (status NEW + batch)."
+echo "  Keystore exported to \$certsDir:"
+echo "    $JKS_OUT"
+echo "    $P12_OUT"
+echo "    $certsDir/SuperAdmin.password   (password: $ADMIN_PASS)"
+echo "  Day-to-day admin remains 214's ELT-Admin."
+echo "======================================================"

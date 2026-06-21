@@ -9,7 +9,7 @@
 #   WSDL:    https://<host>:8443/ejbca/ejbcaws/ejbcaws?wsdl
 #   Service: https://<host>:8443/ejbca/ejbcaws/ejbcaws
 
-version='1.0.0'
+version='1.1.0'   # 1.1.0 — client creds from out-of-repo $certsDir (was Creds/elt)
 
 set -euo pipefail
 
@@ -20,12 +20,13 @@ HOST="${HOST:-host.k3d.internal}"
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 ROOT_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
-CRED_DIR="$ROOT_DIR/Creds/elt"
+certsDir="${certsDir:-/tmp/claude/demo/certs}"   # out-of-repo creds (written by 214)
+CRED_DIR="$certsDir"
 OUT_DIR="$ROOT_DIR/elt/wsdl"     # lives with the ELT code that consumes it (via zeep)
 
-CERT="$CRED_DIR/ce-eltadmin.crt"
-KEY="$CRED_DIR/ce-eltadmin.key"
-CA="$CRED_DIR/ce-managementca.crt"
+CERT="$CRED_DIR/ELT-Admin.crt"
+KEY="$CRED_DIR/ELT-Admin.key"
+CA="$CRED_DIR/ManagementCA.crt"
 
 WSDL_URL="https://${HOST}:8443/ejbca/ejbcaws/ejbcaws?wsdl"
 WSDL_OUT="$OUT_DIR/ejbca-ws.wsdl"

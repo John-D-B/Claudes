@@ -14,9 +14,17 @@
 # After a GUI edit, re-capture the seed with:
 #   ./Bin/210.bootstrap/profiles/export-profiles.sh
 
-version='1.0.0'
+version='1.1.0'   # 1.1.0 — self-log to $logDir/B05-import-profiles.log
+                  # 1.0.0 — prior
 
 set -euo pipefail
+
+# Self-log this run to $logDir (out-of-repo); trap drains tee so no false "hang".
+logDir="${logDir:-/tmp/claude/demo/logs}"; mkdir -p "$logDir"
+exec > >(tee "$logDir/B05-import-profiles.log") 2>&1
+TEE_PID=$!
+trap 'exec 1>&- 2>&-; wait "$TEE_PID" 2>/dev/null || true' EXIT
+echo "=== logging to $logDir/B05-import-profiles.log ==="
 
 CA_NAME="${CA_NAME:-ManagementCA}"
 

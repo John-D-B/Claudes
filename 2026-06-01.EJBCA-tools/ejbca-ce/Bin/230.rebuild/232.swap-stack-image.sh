@@ -32,12 +32,19 @@
 #   When the script edits docker-compose.yml, a timestamped backup
 #   `docker-compose.yml.bak.<unix-time>` is written alongside the file.
 
-version='1.0.0'
+version='1.1.0'   # 1.1.0 — self-log to $logDir/B09-swap.log (the run book's named log).
 
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "$0")/../.." && pwd)"
 STACK_DIR="$ROOT_DIR/stack"
+
+# Self-log this run to $logDir (out-of-repo); trap drains tee so no false "hang".
+logDir="${logDir:-/tmp/claude/demo/logs}"; mkdir -p "$logDir"
+exec > >(tee "$logDir/B09-swap.log") 2>&1
+TEE_PID=$!
+trap 'exec 1>&- 2>&-; wait "$TEE_PID" 2>/dev/null || true' EXIT
+echo "=== logging to $logDir/B09-swap.log ==="
 COMPOSE="$STACK_DIR/docker-compose.yml"
 HEALTHCHECK_URL="${HEALTHCHECK_URL:-https://host.k3d.internal:8443/ejbca/adminweb/}"
 HEALTHCHECK_TIMEOUT="${HEALTHCHECK_TIMEOUT:-90}"

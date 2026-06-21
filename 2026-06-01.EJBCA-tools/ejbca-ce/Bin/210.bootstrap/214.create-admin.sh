@@ -16,28 +16,35 @@
 # Idempotent — if the EE already exists, status is flipped back to NEW
 # and the keystore is regenerated.
 
-version='1.0.0'
+version='1.2.0'   # 1.2.0 — self-log to $logDir/B05-create-admin.log
+                  # 1.1.0 — write straight to the out-of-repo $certsDir with the
+                  #         friendly ELT-Admin.* names (no in-repo Creds/elt).
 
 set -euo pipefail
 
+# Self-log this run to $logDir (out-of-repo); trap drains tee so no false "hang".
+logDir="${logDir:-/tmp/claude/demo/logs}"; mkdir -p "$logDir"
+exec > >(tee "$logDir/B05-create-admin.log") 2>&1
+TEE_PID=$!
+trap 'exec 1>&- 2>&-; wait "$TEE_PID" 2>/dev/null || true' EXIT
+echo "=== logging to $logDir/B05-create-admin.log ==="
+
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 STACK_DIR="$(cd "$SCRIPT_DIR/../../stack" && pwd)"
-# Credentials live at repo-root ./Creds/elt/ — sensitivity-tier grouping
-# kept separate from script/config dirs. Single sub-dir to gitignore /
-# protect / rotate as a unit.
-OUT_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)/Creds/elt"
+# Working certs go to the out-of-repo $certsDir (default /tmp/claude/demo/certs),
+# never inside the cloned repo — they are per-install and not checked in.
+certsDir="${certsDir:-/tmp/claude/demo/certs}"
+OUT_DIR="$certsDir"
 
 ADMIN_USER="eltadmin"           # EJBCA-side username (used inside container)
-LOCAL_BASE="ce-eltadmin"        # host-side filename base; decoupled from
-                                # ADMIN_USER so CE vs EE creds can coexist
-                                # under ./Creds/elt/ (ce-eltadmin.*, ee-eltadmin.*).
+LOCAL_BASE="ELT-Admin"          # host-side filename base in $certsDir
+                                # (ELT-Admin.crt / .key / .p12 / .password)
 ADMIN_CN="ELT-Admin"
 ADMIN_DN="CN=$ADMIN_CN"
 
-# Password lives in the creds dir alongside the P12 it protects, so it can be
-# rotated and audited as a unit. Self-bootstraps with the dev default on first
-# run. See ./Creds/elt/README-elt.md.
-PASSWORD_FILE="$(cd "$SCRIPT_DIR/../.." && pwd)/Creds/elt/${LOCAL_BASE}.password"
+# Password lives in $certsDir alongside the P12 it protects. Self-bootstraps
+# with the dev default on first run.
+PASSWORD_FILE="$certsDir/${LOCAL_BASE}.password"
 if [ ! -f "$PASSWORD_FILE" ]; then
     mkdir -p "$(dirname "$PASSWORD_FILE")"
     echo "eltadmindev" > "$PASSWORD_FILE"
@@ -128,7 +135,7 @@ openssl pkcs12 -in "$P12_LOCAL" -nokeys -clcerts -passin "pass:$ADMIN_PASS" \
 openssl pkcs12 -in "$P12_LOCAL" -nocerts -nodes -passin "pass:$ADMIN_PASS" \
     -out "$OUT_DIR/$LOCAL_BASE.key" 2>/dev/null
 openssl pkcs12 -in "$P12_LOCAL" -cacerts -nokeys -passin "pass:$ADMIN_PASS" \
-    -out "$OUT_DIR/ce-managementca.crt" 2>/dev/null
+    -out "$OUT_DIR/ManagementCA.crt" 2>/dev/null
 
 echo
 echo "==> Verifying issued cert:"
@@ -141,7 +148,7 @@ cat <<EOF
   P12:       $P12_LOCAL  (password: $ADMIN_PASS)
   Cert PEM:  $OUT_DIR/$LOCAL_BASE.crt
   Key PEM:   $OUT_DIR/$LOCAL_BASE.key
-  CA chain:  $OUT_DIR/ce-managementca.crt
+  CA chain:  $OUT_DIR/ManagementCA.crt
   Username:  $ADMIN_USER  (CN=$ADMIN_CN)
 =======================================================
 EOF

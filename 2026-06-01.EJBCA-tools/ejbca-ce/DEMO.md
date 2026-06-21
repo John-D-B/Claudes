@@ -101,12 +101,15 @@ The first boot takes a few minutes while EJBCA initializes its database.
 
 ```bash
 $ cd ${topDir}/ejbca-ce/
-$ for s in ./Bin/210.bootstrap/*.sh; do "$s" || break; done
+$ for s in ./Bin/210.bootstrap/*.sh; do "$s" || break; done   # bootstrap (B05)
+$ ./Bin/220.certs/221.collect-certs.sh                        # collect certs, write ce-target.env (B06)
+$ source "${localDir:-/tmp/claude/demo/local}/ce-target.env"  # load ELT_* connection config
 ```
 
 Or build the server from scratch in one step — `Bin/200.build/201.build-server.sh`<br/>
-&nbsp; &nbsp; wipes and re-creates the stack, waits for readiness, then runs this group<br/>
-&nbsp; &nbsp; (it replaces Parts 1–2).
+&nbsp; &nbsp; wipes and re-creates the stack, waits for readiness, runs this group, **and**<br/>
+&nbsp; &nbsp; collects the certs (it replaces Parts 1–2 and the bootstrap/collect lines<br/>
+&nbsp; &nbsp; above). You still `source "${localDir:-/tmp/claude/demo/local}/ce-target.env"` afterward to load the env.
 
 The group runs in sort order and leaves you with working mTLS admin access:
 
@@ -118,8 +121,9 @@ The group runs in sort order and leaves you with working mTLS admin access:
 - `217`–`218` import the demo's End Entity + Certificate profiles and verify them via SOAP.
 - `219` re-issues the server TLS cert with reachable SANs.
 
-Credentials land on the host under `Creds/elt/` (git-ignored) and are reused<br/>
-&nbsp; &nbsp; by every later part — across rebuilds, restarts, and reboots.
+Credentials land in the out-of-repo `$certsDir` (`/tmp/claude/demo/certs/`),<br/>
+&nbsp; &nbsp; never inside the clone, and are reused by every later part — across<br/>
+&nbsp; &nbsp; rebuilds, restarts, and reboots.
 
 Quick health check at any time:
 

@@ -11,11 +11,19 @@
 # Importing the ManagementCA root lets WildFly validate certs issued by it
 # (i.e., our eltadmin cert from 1.4b, and any future admin cert).
 #
-# Requires: Creds/elt/ce-managementca.crt (produced by 1.4b)
+# Requires: $certsDir/ManagementCA.crt (produced by 214)
 
-version='1.2.0'
+version='1.4.0'   # 1.4.0 — self-log to $logDir/B05-truststore.log
+                  # 1.3.0 — read ManagementCA from out-of-repo $certsDir (was Creds/elt)
 
 set -euo pipefail
+
+# Self-log this run to $logDir (out-of-repo); trap drains tee so no false "hang".
+logDir="${logDir:-/tmp/claude/demo/logs}"; mkdir -p "$logDir"
+exec > >(tee "$logDir/B05-truststore.log") 2>&1
+TEE_PID=$!
+trap 'exec 1>&- 2>&-; wait "$TEE_PID" 2>/dev/null || true' EXIT
+echo "=== logging to $logDir/B05-truststore.log ==="
 
 # Default to host.k3d.internal so localhost-ownership conflicts on the operator
 # machine do not bite. Override with HOST=... on the command line. For local DEV,
@@ -24,8 +32,9 @@ HOST="${HOST:-host.k3d.internal}"
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 STACK_DIR="$(cd "$SCRIPT_DIR/../../stack" && pwd)"
-# Credentials live at repo-root ./Creds/elt/ — see 1.4b for rationale.
-CA_LOCAL="$(cd "$SCRIPT_DIR/../.." && pwd)/Creds/elt/ce-managementca.crt"
+# ManagementCA comes from the out-of-repo $certsDir (written by 214), not the repo.
+certsDir="${certsDir:-/tmp/claude/demo/certs}"
+CA_LOCAL="$certsDir/ManagementCA.crt"
 
 TS_PATH="/opt/keyfactor/appserver/standalone/configuration/truststore.jks"
 
@@ -54,11 +63,11 @@ echo "==> Truststore before:"
 docker compose exec -T ejbca keytool -list -keystore "$TS_PATH" \
     -storepass "$TS_PASS" 2>&1 | head -10
 
-echo "==> Streaming ce-managementca.crt to a writable in-container path"
+echo "==> Streaming ManagementCA.crt to a writable in-container path"
 # `docker compose cp` writes files as root; the container runs as UID 10001
 # and can't read them. Stream via stdin so the file is owned by 10001.
 # /opt/keyfactor/tmp is owned by 10001 per image layout.
-docker compose exec -T ejbca sh -c "cat > /opt/keyfactor/tmp/ce-managementca.crt" \
+docker compose exec -T ejbca sh -c "cat > /opt/keyfactor/tmp/ManagementCA.crt" \
     < "$CA_LOCAL"
 
 echo "==> Removing any stale alias, then importing into truststore"
@@ -67,7 +76,7 @@ docker compose exec -T ejbca keytool -delete \
     -keystore "$TS_PATH" \
     -storepass "$TS_PASS" 2>/dev/null || true
 docker compose exec -T ejbca keytool -importcert \
-    -file /opt/keyfactor/tmp/ce-managementca.crt \
+    -file /opt/keyfactor/tmp/ManagementCA.crt \
     -alias managementca \
     -keystore "$TS_PATH" \
     -storepass "$TS_PASS" \

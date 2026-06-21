@@ -8,9 +8,17 @@
 #
 # Idempotent — re-enabling an already-enabled protocol is a no-op in EJBCA.
 
-version='1.0.0'
+version='1.1.0'   # 1.1.0 — self-log to $logDir/B05-enable-rest.log
+                  # 1.0.0 — prior
 
 set -euo pipefail
+
+# Self-log this run to $logDir (out-of-repo); trap drains tee so no false "hang".
+logDir="${logDir:-/tmp/claude/demo/logs}"; mkdir -p "$logDir"
+exec > >(tee "$logDir/B05-enable-rest.log") 2>&1
+TEE_PID=$!
+trap 'exec 1>&- 2>&-; wait "$TEE_PID" 2>/dev/null || true' EXIT
+echo "=== logging to $logDir/B05-enable-rest.log ==="
 
 # Default to host.k3d.internal so localhost-ownership conflicts on the operator
 # machine do not bite. Override with HOST=... on the command line. For local DEV,

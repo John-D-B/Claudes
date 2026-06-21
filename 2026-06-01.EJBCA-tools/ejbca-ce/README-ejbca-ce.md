@@ -34,7 +34,7 @@ Seven workflow script groups ("buckets"), each its own `Bin/<NNN>.<purpose>/` su
 |---|---|---|
 | `Bin/200.build/` | From-scratch server build — orchestrator that drives `210.bootstrap/` | Once, after `git clone` |
 | `Bin/210.bootstrap/` | Stack bring-up + admin bootstrap + profile import | Via `201`, or step-by-step |
-| `Bin/220.certs/` | Collect admin + CA + server certs to `Creds/elt/`, write `local/ce-target.env` | After bootstrap |
+| `Bin/220.certs/` | Export the server cert to `$certsDir` + write `local/ce-target.env` (`214` wrote the client cert + CA) | After bootstrap |
 | `Bin/230.rebuild/` | Rebuild the EJBCA container with your local source edits | Every time you change EJBCA Java code |
 | `Bin/300.cluster/` | Stand up the k3d cluster + CoreDNS for the cert-manager demo | Before the K8s cert-manager demo |
 | `Bin/500.verify-PR/` | Integration tests that lock in PR-fix behaviour | After every rebuild that touches PR-relevant code |
@@ -47,7 +47,8 @@ Scripts inside each group are numbered from `decade+1` and run in sort order<br/
 &nbsp; &nbsp; sections of the [`DEMO.md`](./DEMO.md) walkthrough.
 
 Two groups are **orchestrators** that drive others, and live outside the glob<br/>
-&nbsp; &nbsp; they run: `200.build/201.build-server.sh` runs all of `210.bootstrap/*.sh`;<br/>
+&nbsp; &nbsp; they run: `200.build/201.build-server.sh` runs all of `210.bootstrap/*.sh`<br/>
+&nbsp; &nbsp; then `220.certs/221.collect-certs.sh`;<br/>
 &nbsp; &nbsp; `300.cluster/301.build-cluster.sh` builds the k3d cluster in one step.
 
 The 3-digit scheme is intentional: it visually distinguishes the convention<br/>
@@ -121,11 +122,11 @@ ejbca-ce/
         └── ee-target.env.example
 ```
 
-You will also create two directories at runtime:<br/>
-&nbsp; &nbsp; `ejbca-ce/Creds/elt/` — where `Bin/220.certs/221.collect-certs.sh` writes the<br/>
-&nbsp; &nbsp; admin cert + key + CA bundle + server cert; and `ejbca-ce/local/` — where the<br/>
-&nbsp; &nbsp; same script writes the generated `ce-target.env`. Both are created on first<br/>
-&nbsp; &nbsp; run if missing. See [Credentials supply](#credentials-supply).
+The build writes **no credentials inside the clone**. The working certs go to an<br/>
+&nbsp; &nbsp; out-of-repo `$certsDir` (default `/tmp/claude/demo/certs/`): `214` writes the<br/>
+&nbsp; &nbsp; admin cert + key + CA there, `221` adds the exported server cert; the<br/>
+&nbsp; &nbsp; generated `ce-target.env` goes to `$localDir` (default `…/demo/local/`). Both<br/>
+&nbsp; &nbsp; are created on first run. See [Credentials supply](#credentials-supply).
 
 <br/>
 
@@ -133,12 +134,12 @@ You will also create two directories at runtime:<br/>
 
 ```bash
 # (1) Build the server from scratch: wipe + bring up the stack, wait for
-#     readiness, then run the whole 210.bootstrap/ sequence in order.
+#     readiness, run the 210.bootstrap/ sequence, then collect the certs and
+#     write local/ce-target.env (221) — all in one step.
 Bin/200.build/201.build-server.sh
 
-# (2) Collect the admin + CA + server certs into Creds/elt/, and write the
-#     generated per-install config to local/ce-target.env.
-Bin/220.certs/221.collect-certs.sh
+# (2) Load the generated connection config (host, ports, client cert/key/CA).
+source "${localDir:-/tmp/claude/demo/local}/ce-target.env"
 
 # (3) Probe that REST + SOAP are reachable with mTLS.
 Bin/210.bootstrap/216.verify-mtls.sh
@@ -204,23 +205,25 @@ The default is `host.k3d.internal`. The override is bare-hostname (no scheme,<br
 
 ## Credentials supply
 
-`Bin/220.certs/221.collect-certs.sh` produces a credential set under<br/>
-&nbsp; &nbsp; `ejbca-ce/Creds/elt/` that downstream groups reuse, plus a generated<br/>
-&nbsp; &nbsp; `ejbca-ce/local/ce-target.env` that ELT and the probe scripts read:
+The build writes the working certs to an out-of-repo `$certsDir` (default<br/>
+&nbsp; &nbsp; `/tmp/claude/demo/certs/`) — never inside the clone — plus a generated<br/>
+&nbsp; &nbsp; `$localDir/ce-target.env` that ELT and the probe scripts read:
 
-| File | What | Originates in |
+| File (`$certsDir/…`) | What | Written by |
 |---|---|---|
-| `ce-eltadmin.crt` | Admin client cert | `214.create-admin.sh` |
-| `ce-eltadmin.key` | Admin client key | `214.create-admin.sh` |
-| `ce-eltadmin.password` | P12 password for the above | `214.create-admin.sh` |
-| `ce-managementca.crt` | ManagementCA certificate (CA bundle for mTLS) | `215.populate-truststore.sh` |
-| `ce-server-mtls.*` | EJBCA's server TLS cert + key + JKS + P12 + password | `219.reissue-server-cert.sh` |
+| `ELT-Admin.crt` | Admin client cert | `214.create-admin.sh` |
+| `ELT-Admin.key` | Admin client key | `214.create-admin.sh` |
+| `ELT-Admin.p12` | Admin client P12 | `214.create-admin.sh` |
+| `ELT-Admin.password` | P12 password for the above | `214.create-admin.sh` |
+| `ManagementCA.crt` | ManagementCA cert (CA bundle for mTLS) | `214.create-admin.sh` |
+| `host.k3d.internal.crt` | EJBCA's server TLS cert (exported leaf) | `221.collect-certs.sh` |
+| `SuperAdmin.{jks,p12,password}` | Auto-bootstrap SuperAdmin keystore — for admin work needing SuperAdmin rather than ELT-Admin | `212.bootstrap-superadmin.sh` |
 
-The bootstrap scripts create this material inside EJBCA;<br/>
-&nbsp; &nbsp; `221.collect-certs.sh` extracts it to the host filesystem and writes<br/>
-&nbsp; &nbsp; `local/ce-target.env`. Once that has run cleanly, the credentials are<br/>
-&nbsp; &nbsp; reusable across reboots, rebuilds, and stack restarts — they live under<br/>
-&nbsp; &nbsp; `ejbca-ce/Creds/elt/`, not inside the EJBCA container.
+`214` writes the client cert + key + CA straight into `$certsDir` (no in-repo<br/>
+&nbsp; &nbsp; staging); `221` adds the server cert (exported from the container keystore)<br/>
+&nbsp; &nbsp; and writes `ce-target.env`. Once the build has run, the credentials are<br/>
+&nbsp; &nbsp; reusable across reboots and restarts — they live in `$certsDir` on the host,<br/>
+&nbsp; &nbsp; not inside the EJBCA container and not inside the cloned repo.
 
 <br/>
 
@@ -228,18 +231,23 @@ The bootstrap scripts create this material inside EJBCA;<br/>
 
 ### `Bin/200.build/` — from-scratch server build
 
-`201.build-server.sh` — orchestrator. Wipes and brings up the Compose stack<br/>
-&nbsp; &nbsp; (`docker compose down -v` then `up -d`), waits for the admin GUI to answer<br/>
-&nbsp; &nbsp; `200`, then runs every `Bin/210.bootstrap/*.sh` in order. One command to go<br/>
-&nbsp; &nbsp; from a clean clone to a fully bootstrapped server.
+`201.build-server.sh` — orchestrator. Resets the compose image to the upstream<br/>
+&nbsp; &nbsp; base, wipes and brings up the Compose stack (`docker compose down -v` then<br/>
+&nbsp; &nbsp; `up -d`), waits for the admin GUI to answer `200`, runs every<br/>
+&nbsp; &nbsp; `Bin/210.bootstrap/*.sh` in order, then collects the certs via<br/>
+&nbsp; &nbsp; `220.certs/221.collect-certs.sh`. One command to go from a clean clone to a<br/>
+&nbsp; &nbsp; bootstrapped server with `local/ce-target.env` ready to source — a fresh<br/>
+&nbsp; &nbsp; bootstrap mints a new ManagementCA, so collecting in the same run is what<br/>
+&nbsp; &nbsp; keeps the certs valid.
 
 ### `Bin/210.bootstrap/` — stack bring-up + admin bootstrap
 
 `211.verify-stack.sh` — confirm both containers are up, MariaDB has its schema,<br/>
 &nbsp; &nbsp; and the HTTPS admin GUI answers `200` (the reliable app-ready signal).
 
-`212.bootstrap-superadmin.sh` — re-issue the auto-bootstrapped SuperAdmin so<br/>
-&nbsp; &nbsp; the bootstrap-only cert is replaced by a long-lived admin cert.
+`212.bootstrap-superadmin.sh` — refresh the auto-bootstrapped SuperAdmin EE and<br/>
+&nbsp; &nbsp; export its keystore to `$certsDir` as `SuperAdmin.{jks,p12,password}` for<br/>
+&nbsp; &nbsp; admin work needing SuperAdmin. Day-to-day admin uses `214`'s `ELT-Admin`.
 
 `213.enable-rest-api.sh` — turn on EJBCA's REST protocols via System<br/>
 &nbsp; &nbsp; Configuration.
@@ -268,10 +276,10 @@ The bootstrap scripts create this material inside EJBCA;<br/>
 
 ### `Bin/220.certs/` — collect credentials
 
-`221.collect-certs.sh` — extract the admin cert + key + P12, the ManagementCA<br/>
-&nbsp; &nbsp; bundle, and the server TLS cert from the running stack into `Creds/elt/`,<br/>
-&nbsp; &nbsp; and write the generated `local/ce-target.env` consumed by ELT and the<br/>
-&nbsp; &nbsp; probe scripts.
+`221.collect-certs.sh` — export the server TLS cert (the leaf, via `keytool`)<br/>
+&nbsp; &nbsp; from the running stack into `$certsDir`, and write the generated<br/>
+&nbsp; &nbsp; `local/ce-target.env` consumed by ELT and the probe scripts. (`214` already<br/>
+&nbsp; &nbsp; wrote the admin cert + key + P12 + ManagementCA into `$certsDir`.)
 
 ### `Bin/230.rebuild/` — rebuild after a code edit
 

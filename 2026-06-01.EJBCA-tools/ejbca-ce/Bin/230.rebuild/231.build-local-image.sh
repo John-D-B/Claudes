@@ -25,13 +25,21 @@
 #
 # Exit 0 on success.
 
-version='1.1.0'
+version='1.2.0'   # 1.2.0 — self-log to $logDir/B08-build-image.log (the run book's named log).
+                  # 1.1.0 — fetch upstream + apply bundled patches (skip-if-merged).
 
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 ROOT_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
 cd "$ROOT_DIR"
+
+# Self-log this run to $logDir (out-of-repo); trap drains tee so no false "hang".
+logDir="${logDir:-/tmp/claude/demo/logs}"; mkdir -p "$logDir"
+exec > >(tee "$logDir/B08-build-image.log") 2>&1
+TEE_PID=$!
+trap 'exec 1>&- 2>&-; wait "$TEE_PID" 2>/dev/null || true' EXIT
+echo "=== logging to $logDir/B08-build-image.log ==="
 
 DEFAULT_SRC="/tmp/claude/GitHub/ejbca-ce"
 EJBCA_SRC="${EJBCA_SRC:-$DEFAULT_SRC}"

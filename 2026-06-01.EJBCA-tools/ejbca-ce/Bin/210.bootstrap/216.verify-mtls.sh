@@ -12,16 +12,25 @@
 # The server cert (1.4e) already includes host.k3d.internal in its SANs,
 # so TLS verification works against this name out of the box.
 
-version='1.3.0'
+version='1.5.0'   # 1.5.0 — self-log to $logDir/B05-verify-mtls.log
+                  # 1.4.0 — client creds from out-of-repo $certsDir (was Creds/elt)
 set -euo pipefail
 
-SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-# Credentials live at repo-root ./Creds/elt/ — see 1.4b for rationale.
-CRED_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)/Creds/elt"
+# Self-log this run to $logDir (out-of-repo); trap drains tee so no false "hang".
+logDir="${logDir:-/tmp/claude/demo/logs}"; mkdir -p "$logDir"
+exec > >(tee "$logDir/B05-verify-mtls.log") 2>&1
+TEE_PID=$!
+trap 'exec 1>&- 2>&-; wait "$TEE_PID" 2>/dev/null || true' EXIT
+echo "=== logging to $logDir/B05-verify-mtls.log ==="
 
-CERT="$CRED_DIR/ce-eltadmin.crt"
-KEY="$CRED_DIR/ce-eltadmin.key"
-CA="$CRED_DIR/ce-managementca.crt"
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+# Client creds come from the out-of-repo $certsDir (written by 214), not the repo.
+certsDir="${certsDir:-/tmp/claude/demo/certs}"
+CRED_DIR="$certsDir"
+
+CERT="$CRED_DIR/ELT-Admin.crt"
+KEY="$CRED_DIR/ELT-Admin.key"
+CA="$CRED_DIR/ManagementCA.crt"
 HOST="${HOST:-https://host.k3d.internal:8443}"
 REST="$HOST/ejbca/ejbca-rest-api"
 ADMINWEB="$HOST/ejbca/adminweb/"

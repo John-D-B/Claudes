@@ -13,11 +13,15 @@
 
 setup_version='1.0.0'
 
-# certs/local dirs — relative to the current dir (the working/demo dir),
-# set BEFORE we cd into the bundle:
+# certs/local/logs dirs — relative to the current dir (the working/demo dir),
+# set BEFORE we cd into the bundle. All out-of-repo: nothing dynamic in the clone.
+#   certsDir — the working certs the tools use
+#   localDir — generated ce-target.env
+#   logDir  — per-step run logs each workflow script writes (named in the run book)
 export certsDir="$PWD/certs"
 export localDir="$PWD/local"
-mkdir -p "$certsDir" "$localDir"
+export logDir="$PWD/logs"
+mkdir -p "$certsDir" "$localDir" "$logDir"
 
 # cd into the bundle root (this script lives in <bundle>/bin/), anchor topDir:
 export topDir="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
