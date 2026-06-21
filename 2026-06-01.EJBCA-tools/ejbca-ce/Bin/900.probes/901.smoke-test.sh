@@ -18,7 +18,7 @@
 #
 # Exit code: 0 if all automated PASS, 1 if any FAIL or HUMAN-review needed.
 
-version='2.0.0'
+version='2.1.0'   # 2.1.0 — call ELT via PATH (bundle layout), not ./.venv/./elt
 
 set -euo pipefail
 
@@ -26,8 +26,9 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 ROOT_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
 cd "$ROOT_DIR"
 
-VENV_PY="./.venv/bin/python"
-ELT="./elt/ejbca-lifecycle-tool.py"
+# ELT by name via $PATH (bundle layout), venv active — per setup.sh. The
+# echoed commands below are then copy-pasteable exactly as the user runs them.
+ELT="ejbca-lifecycle-tool.py"
 
 # ---------- arg parsing ----------
 TARGET="ce"
@@ -114,7 +115,7 @@ build_base_cmd() {
     [ "${ELT_VERIFY_SSL:-}" = "no" ] && verify_flag="-no-verify-ssl"
     local ca_arg=""
     [ -n "${ELT_CA_CERT:-}" ] && ca_arg="-ca-cert $ELT_CA_CERT"
-    echo "$VENV_PY $ELT list -d1 -v -ejbca-host $ELT_HOST -ejbca-port $port -client-cert $ELT_CERT -client-key $ELT_KEY $verify_flag $ca_arg"
+    echo "$ELT list -d1 -v -ejbca-host $ELT_HOST -ejbca-port $port -client-cert $ELT_CERT -client-key $ELT_KEY $verify_flag $ca_arg"
 }
 
 # Build a non-list ELT subcommand (count, ping) with the same connection args.
@@ -125,7 +126,7 @@ build_subcmd() {
     [ "${ELT_VERIFY_SSL:-}" = "no" ] && verify_flag="-no-verify-ssl"
     local ca_arg=""
     [ -n "${ELT_CA_CERT:-}" ] && ca_arg="-ca-cert $ELT_CA_CERT"
-    echo "$VENV_PY $ELT $subcmd -v -ejbca-host $ELT_HOST -ejbca-port $port -client-cert $ELT_CERT -client-key $ELT_KEY $verify_flag $ca_arg"
+    echo "$ELT $subcmd -v -ejbca-host $ELT_HOST -ejbca-port $port -client-cert $ELT_CERT -client-key $ELT_KEY $verify_flag $ca_arg"
 }
 
 # ---------- CE tests ----------
@@ -151,7 +152,7 @@ ce_tests() {
 
     # C5: mutex check. Expect ELT to exit non-zero.
     run_test "C5" "--zeep --rest rejected (mutually exclusive)" \
-        "! $VENV_PY $ELT list --zeep --rest" \
+        "! $ELT list --zeep --rest" \
         ".*"
 }
 

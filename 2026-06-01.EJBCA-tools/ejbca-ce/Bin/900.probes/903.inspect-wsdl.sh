@@ -7,36 +7,32 @@
 # delete-related operations so the open question from 5.1 (does SOAP have
 # an EE-delete equivalent?) can be answered.
 #
-# Self-bootstraps a project-local venv at ./.venv/ on first run. The venv
-# is gitignored by convention.
+# Uses zeep from the bundle venv — source bin/setup.sh first (per the
+# storyboard), the same as every other tool here.
 
-version='1.0.0'
+version='1.1.0'   # 1.1.0 — python3/zeep via active venv + WSDL resolved for
+                  #         the bundle layout; no DEV-relative ./.venv/./elt.
 
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 ROOT_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
-VENV="$ROOT_DIR/.venv"
-WSDL="$ROOT_DIR/elt/wsdl/ejbca-ws.wsdl"
+# WSDL: DEV keeps elt/ under ROOT_DIR; the bundle has it one level up (beside bin/).
+WSDL=""
+for c in "$ROOT_DIR/elt/wsdl/ejbca-ws.wsdl" "$ROOT_DIR/../elt/wsdl/ejbca-ws.wsdl"; do
+    [ -s "$c" ] && WSDL="$c" && break
+done
+[ -n "$WSDL" ] || { echo "ERROR: ejbca-ws.wsdl not found under elt/wsdl/ — run 5.1 first" >&2; exit 1; }
 
-# --- venv bootstrap ---
-if [ ! -d "$VENV" ]; then
-    echo "==> Creating venv at $VENV"
-    python3 -m venv "$VENV"
-fi
-if ! "$VENV/bin/python" -c "import zeep" 2>/dev/null; then
-    echo "==> Installing zeep into venv"
-    "$VENV/bin/pip" install --quiet --upgrade pip
-    "$VENV/bin/pip" install --quiet zeep
-fi
-
-if [ ! -s "$WSDL" ]; then
-    echo "ERROR: $WSDL missing — run 5.1 first" >&2
+# zeep comes from the active venv (source bin/setup.sh first, as the storyboard
+# documents) — no DEV-relative self-bootstrapped ./.venv.
+if ! python3 -c "import zeep" 2>/dev/null; then
+    echo "ERROR: python module 'zeep' missing — source bin/setup.sh first" >&2
     exit 1
 fi
 
 # --- inspection ---
-"$VENV/bin/python" - "$WSDL" <<'PY'
+python3 - "$WSDL" <<'PY'
 import sys, zeep
 
 wsdl_path = sys.argv[1]

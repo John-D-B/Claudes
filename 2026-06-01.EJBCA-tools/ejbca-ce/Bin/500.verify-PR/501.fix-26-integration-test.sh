@@ -14,7 +14,8 @@
 #
 # Exit 0 on full pass, 1 on any failure.
 
-version='3.0.0'   # 3.0.0 — target config read from $localDir (was ./Bin/elt/);
+version='3.1.0'   # 3.1.0 — stdlib python via PATH (python3), not ./.venv.
+                  # 3.0.0 — target config read from $localDir (was ./Bin/elt/);
                   #         dynamic *-target.env files moved out of the repo.
                   # 2.5.0 — wait for the tee subprocess to flush before the
                   #         script exits, so the operator's bash prompt
@@ -62,7 +63,7 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 ROOT_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
 cd "$ROOT_DIR"
 
-VENV_PY="./.venv/bin/python"
+VENV_PY="python3"   # stdlib one-liners only (urllib); PATH python, venv-agnostic
 STACK_DIR="./stack"
 EJBCA="/opt/keyfactor/bin/ejbca.sh"
 

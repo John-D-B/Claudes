@@ -54,8 +54,8 @@ Every script prints each `curl` / `docker` / `keytool` command before executing 
 
 - Docker with `docker compose`.
 - `bash`, `curl` (stock versions are fine).
-- For Part 3 only: a checkout of the EJBCA-CE source tree with the PR branches applied,<br/>
-&nbsp; &nbsp; and OpenJDK 21 for the Gradle build.
+- For Part 3 only: OpenJDK 21 and network access — `231.build-local-image.sh`<br/>
+&nbsp; &nbsp; clones the upstream EJBCA-CE source and applies the bundled PR patches for you.
 - One line in `/etc/hosts` so the scripts' default hostname resolves locally:
 
 ```bash
@@ -136,8 +136,8 @@ $ ./Bin/230.rebuild/231.build-local-image.sh          # gradle build + docker wr
 $ ./Bin/230.rebuild/232.swap-stack-image.sh ejbca-ce:local-fixes
 ```
 
-`231` builds the EJBCA EAR from your source checkout (with the PR branches applied)<br/>
-&nbsp; &nbsp; and wraps it onto the upstream `keyfactor/ejbca-ce` base image as `ejbca-ce:local-fixes`.<br/>
+`231` clones the upstream EJBCA-CE source, applies the bundled Fix-26 / Fix-27 patches,<br/>
+&nbsp; &nbsp; builds the EAR, and wraps it onto the `keyfactor/ejbca-ce` base image as `ejbca-ce:local-fixes`.<br/>
 `232` swaps the running stack onto that image.
 
 To revert to the upstream image later:

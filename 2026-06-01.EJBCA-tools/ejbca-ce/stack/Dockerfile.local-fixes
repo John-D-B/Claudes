@@ -20,7 +20,7 @@
 FROM keyfactor/ejbca-ce:latest
 
 # Path to the exploded EAR directory within the docker build context.
-ARG EAR_EXPLODED=ejbca-ce/build/libs/ejbca.ear.exploded
+ARG EAR_EXPLODED=build/ejbca.ear.exploded
 
 # Pinned to the WildFly version shipped by keyfactor/ejbca-ce 9.3.7.
 ARG EJBCA_DIST_DIR=/opt/keyfactor/ejbca/dist

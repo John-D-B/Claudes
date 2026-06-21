@@ -5,8 +5,10 @@
 #
 # Lives in Bin/200.build/ so it sits OUTSIDE the 210.bootstrap glob it drives.
 # Destructive: `docker compose down -v` wipes the running server + database.
+# "From scratch" includes the image: the compose image: line is reset to the
+# upstream base before boot, undoing any prior 232 swap to ejbca-ce:local-fixes.
 
-version='1.0.0'
+version='1.1.0'   # 1.1.0 — reset compose image to upstream base on wipe (true from-scratch)
 
 set -euo pipefail
 
@@ -15,9 +17,20 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 ROOT_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
 cd "$ROOT_DIR"
 COMPOSE="stack/docker-compose.yml"
+BASE_IMAGE="${BASE_IMAGE:-keyfactor/ejbca-ce:latest}"   # 232 may have swapped this to local-fixes
 
-echo "=== [1/4] Wipe: docker compose down -v ==="
+echo "=== [1/4] Wipe: docker compose down -v + reset image to upstream base ==="
 docker compose -f "$COMPOSE" down -v
+# Reset the ejbca service's image: line to the upstream base, so re-running this
+# orchestrator after a 232 swap really does start from scratch (awk scopes the
+# match to the ejbca block and preserves any trailing comment).
+awk -v new="$BASE_IMAGE" '
+    /^  ejbca:/   { in_ejbca = 1 }
+    /^  [a-zA-Z]/ && !/^  ejbca:/ { in_ejbca = 0 }
+    in_ejbca && /^    image:/ { sub(/image:[[:space:]]+[^[:space:]#]+/, "image: " new) }
+    { print }
+' "$COMPOSE" > "$COMPOSE.tmp" && mv "$COMPOSE.tmp" "$COMPOSE"
+echo "  compose image reset to: $BASE_IMAGE"
 
 echo "=== [2/4] Create: docker compose up -d ==="
 docker compose -f "$COMPOSE" up -d

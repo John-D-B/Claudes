@@ -37,7 +37,7 @@
 #
 # Exit 0 on full pass, 1 on any failure.
 
-version='2.0.0'
+version='2.1.0'   # 2.1.0 — stdlib python via PATH (python3), not ./.venv
 
 set -euo pipefail
 
@@ -45,7 +45,7 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 ROOT_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
 cd "$ROOT_DIR"
 
-VENV_PY="./.venv/bin/python"
+VENV_PY="python3"   # stdlib one-liners only (urllib); PATH python, venv-agnostic
 STACK_DIR="./stack"
 EJBCA="/opt/keyfactor/bin/ejbca.sh"
 

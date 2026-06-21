@@ -1,0 +1,897 @@
+diff --git a/modules/admin-gui/resources/languages/languagefile.en.properties b/modules/admin-gui/resources/languages/languagefile.en.properties
+index 914ea49a0f..44663e3282 100644
+--- a/modules/admin-gui/resources/languages/languagefile.en.properties
++++ b/modules/admin-gui/resources/languages/languagefile.en.properties
+@@ -5194,11 +5194,23 @@ DATABASEMAINTENANCEWORKER = Database Maintenance Worker
+ 
+ DATABASEMAINTENANCEWORKERSETTINGS = Database Maintenance Worker Settings
+ 
+-DATABASEMAINTENANCEWORKER_DELETE_EXPIRED_CERTS = Delete Expired Certificates
++DATABASEMAINTENANCEWORKER_DELETION_MODE_HEADER = Certificate deletion mode
+ 
+-DATABASEMAINTENANCEWORKER_DELETE_EXPIRED_CRLS = Delete Expired CRLs
++DATABASEMAINTENANCEWORKER_PANEL_EXPIRED_HEADER = When "Delete expired certificates" is selected:
+ 
+-DATABASEMAINTENANCEWORKER_DELAY_AFTER_EXPIRATION = Delay After Expiration
++DATABASEMAINTENANCEWORKER_PANEL_REVOKED_HEADER = When "Delete revoked certificates" is selected:
++
++DATABASEMAINTENANCEWORKER_DELAY_AFTER_EXPIRATION = Delay after expiration
++
++DATABASEMAINTENANCEWORKER_DELAY_AFTER_REVOCATION = Delay after revocation
++
++DATABASEMAINTENANCEWORKER_REVOCATION_REASONS = Revocation reasons
++
++DATABASEMAINTENANCEWORKER_REVOCATION_REASONS_HELP = Revocation reasons to match. Only certificates whose reason is in this set are reaped under "Delete revoked certificates" mode. Hold Ctrl (Cmd on macOS) to select multiple.
++
++DATABASEMAINTENANCEWORKER_CRL_CRITERIA_HEADER = CRL match criteria
++
++DATABASEMAINTENANCEWORKER_DELETE_EXPIRED_CRLS = Match expired CRLs
+ 
+ DATABASEMAINTENANCEWORKER_BATCH_SIZE = Entries to delete per run
+ 
+diff --git a/modules/admin-gui/src/org/ejbca/ui/web/admin/services/servicetypes/DatabaseMaintenanceWorkerType.java b/modules/admin-gui/src/org/ejbca/ui/web/admin/services/servicetypes/DatabaseMaintenanceWorkerType.java
+index df5fd78dc0..c8aac4bda4 100644
+--- a/modules/admin-gui/src/org/ejbca/ui/web/admin/services/servicetypes/DatabaseMaintenanceWorkerType.java
++++ b/modules/admin-gui/src/org/ejbca/ui/web/admin/services/servicetypes/DatabaseMaintenanceWorkerType.java
+@@ -12,11 +12,18 @@
+  *************************************************************************/
+ package org.ejbca.ui.web.admin.services.servicetypes;
+ 
++import org.cesecore.certificates.crl.RevocationReasons;
+ import org.cesecore.util.PropertyTools;
+ import org.ejbca.core.model.services.workers.DatabaseMaintenanceWorkerConstants;
+ 
++import jakarta.faces.model.SelectItem;
++
+ import java.io.IOException;
+ import java.util.ArrayList;
++import java.util.Arrays;
++import java.util.Collections;
++import java.util.LinkedHashSet;
++import java.util.List;
+ import java.util.Properties;
+ 
+ /**
+@@ -30,10 +37,13 @@ public class DatabaseMaintenanceWorkerType extends BaseWorkerType {
+ 
+     private static final String WORKER_SUB_PAGE = "databasemaintenanceworker.xhtml";
+ 
++    private String certDeletionMode = DatabaseMaintenanceWorkerConstants.DEFAULT_CERT_DELETION_MODE;
+     private String delayTimeUnit  = DatabaseMaintenanceWorkerConstants.DEFAULT_DELAY_TIMEUNIT;
+     private int delayTimeValue = DatabaseMaintenanceWorkerConstants.DEFAULT_DELAY_TIMEVALUE;
+-    private boolean deleteExpiredCertificates = true;
++    private String revokeDelayTimeUnit  = DatabaseMaintenanceWorkerConstants.DEFAULT_REVOKE_DELAY_TIMEUNIT;
++    private int revokeDelayTimeValue = DatabaseMaintenanceWorkerConstants.DEFAULT_REVOKE_DELAY_TIMEVALUE;
+     private boolean deleteExpiredCrls = true;
++    private String revocationReasons = DatabaseMaintenanceWorkerConstants.DEFAULT_REVOCATION_REASONS;
+     private int batchSize = DatabaseMaintenanceWorkerConstants.DEFAULT_BATCH_SIZE;
+ 
+     public DatabaseMaintenanceWorkerType() {
+@@ -48,11 +58,21 @@ public class DatabaseMaintenanceWorkerType extends BaseWorkerType {
+     @Override
+     public Properties getProperties(final ArrayList<String> errorMessages) throws IOException {
+         Properties ret = super.getProperties(errorMessages);
++        ret.setProperty(DatabaseMaintenanceWorkerConstants.PROP_CERT_DELETION_MODE, certDeletionMode);
+         ret.setProperty(DatabaseMaintenanceWorkerConstants.PROP_DELAY_TIMEUNIT, delayTimeUnit);
+         ret.setProperty(DatabaseMaintenanceWorkerConstants.PROP_DELAY_TIMEVALUE, Integer.toString(delayTimeValue));
+-        ret.setProperty(DatabaseMaintenanceWorkerConstants.PROP_DELETE_EXPIRED_CERTIFICATES, Boolean.toString(deleteExpiredCertificates));
++        ret.setProperty(DatabaseMaintenanceWorkerConstants.PROP_REVOKE_DELAY_TIMEUNIT, revokeDelayTimeUnit);
++        ret.setProperty(DatabaseMaintenanceWorkerConstants.PROP_REVOKE_DELAY_TIMEVALUE, Integer.toString(revokeDelayTimeValue));
+         ret.setProperty(DatabaseMaintenanceWorkerConstants.PROP_DELETE_EXPIRED_CRLS, Boolean.toString(deleteExpiredCrls));
++        ret.setProperty(DatabaseMaintenanceWorkerConstants.PROP_REVOCATION_REASONS, revocationReasons != null ? revocationReasons : "");
+         ret.setProperty(DatabaseMaintenanceWorkerConstants.PROP_BATCH_SIZE, Integer.toString(batchSize));
++        // Sync the legacy boolean flags from the radio mode so older
++        // worker code paths and downstream tools that read the booleans
++        // see a consistent picture.
++        ret.setProperty(DatabaseMaintenanceWorkerConstants.PROP_DELETE_EXPIRED_CERTIFICATES,
++                Boolean.toString(DatabaseMaintenanceWorkerConstants.MODE_EXPIRED.equals(certDeletionMode)));
++        ret.setProperty(DatabaseMaintenanceWorkerConstants.PROP_DELETE_REVOKED_CERTIFICATES,
++                Boolean.toString(DatabaseMaintenanceWorkerConstants.MODE_REVOKED.equals(certDeletionMode)));
+         return ret;
+     }
+ 
+@@ -61,9 +81,44 @@ public class DatabaseMaintenanceWorkerType extends BaseWorkerType {
+         super.setProperties(properties);
+         delayTimeValue = PropertyTools.get(properties, DatabaseMaintenanceWorkerConstants.PROP_DELAY_TIMEVALUE, delayTimeValue);
+         delayTimeUnit = properties.getProperty(DatabaseMaintenanceWorkerConstants.PROP_DELAY_TIMEUNIT, delayTimeUnit);
+-        deleteExpiredCertificates = PropertyTools.get(properties, DatabaseMaintenanceWorkerConstants.PROP_DELETE_EXPIRED_CERTIFICATES, deleteExpiredCertificates);
++        revokeDelayTimeValue = PropertyTools.get(properties, DatabaseMaintenanceWorkerConstants.PROP_REVOKE_DELAY_TIMEVALUE, revokeDelayTimeValue);
++        revokeDelayTimeUnit = properties.getProperty(DatabaseMaintenanceWorkerConstants.PROP_REVOKE_DELAY_TIMEUNIT, revokeDelayTimeUnit);
+         deleteExpiredCrls = PropertyTools.get(properties, DatabaseMaintenanceWorkerConstants.PROP_DELETE_EXPIRED_CRLS, deleteExpiredCrls);
++        revocationReasons = properties.getProperty(DatabaseMaintenanceWorkerConstants.PROP_REVOCATION_REASONS, revocationReasons);
+         batchSize = PropertyTools.get(properties, DatabaseMaintenanceWorkerConstants.PROP_BATCH_SIZE, batchSize);
++        // Resolve cert-deletion mode: explicit property wins; otherwise
++        // derive from the legacy boolean flags for backward compatibility.
++        final String explicitMode = properties.getProperty(DatabaseMaintenanceWorkerConstants.PROP_CERT_DELETION_MODE);
++        if (explicitMode != null && !explicitMode.trim().isEmpty()) {
++            certDeletionMode = explicitMode.trim();
++        } else if (PropertyTools.get(properties, DatabaseMaintenanceWorkerConstants.PROP_DELETE_EXPIRED_CERTIFICATES, false)) {
++            certDeletionMode = DatabaseMaintenanceWorkerConstants.MODE_EXPIRED;
++        } else if (PropertyTools.get(properties, DatabaseMaintenanceWorkerConstants.PROP_DELETE_REVOKED_CERTIFICATES, false)) {
++            certDeletionMode = DatabaseMaintenanceWorkerConstants.MODE_REVOKED;
++        }
++        // else: keep the existing default (MODE_NONE)
++    }
++
++    public String getCertDeletionMode() {
++        return certDeletionMode;
++    }
++
++    public void setCertDeletionMode(final String certDeletionMode) {
++        this.certDeletionMode = certDeletionMode;
++    }
++
++    /**
++     * JSF accessor — the available radio-button options for cert deletion mode.
++     */
++    public List<SelectItem> getAvailableCertDeletionModes() {
++        final List<SelectItem> items = new ArrayList<>();
++        items.add(new SelectItem(DatabaseMaintenanceWorkerConstants.MODE_EXPIRED,
++                "Delete expired certificates  (ELT: E + R)"));
++        items.add(new SelectItem(DatabaseMaintenanceWorkerConstants.MODE_REVOKED,
++                "Delete revoked certificates  (ELT: r + R)"));
++        items.add(new SelectItem(DatabaseMaintenanceWorkerConstants.MODE_NONE,
++                "None  (CRL deletions only)"));
++        return items;
+     }
+ 
+     public String getDelayTimeUnit() {
+@@ -82,12 +137,20 @@ public class DatabaseMaintenanceWorkerType extends BaseWorkerType {
+         this.delayTimeValue = delayTimeValue;
+     }
+ 
+-    public boolean isDeleteExpiredCertificates() {
+-        return deleteExpiredCertificates;
++    public String getRevokeDelayTimeUnit() {
++        return revokeDelayTimeUnit;
++    }
++
++    public void setRevokeDelayTimeUnit(final String revokeDelayTimeUnit) {
++        this.revokeDelayTimeUnit = revokeDelayTimeUnit;
++    }
++
++    public int getRevokeDelayTimeValue() {
++        return revokeDelayTimeValue;
+     }
+ 
+-    public void setDeleteExpiredCertificates(final boolean deleteExpiredCertificates) {
+-        this.deleteExpiredCertificates = deleteExpiredCertificates;
++    public void setRevokeDelayTimeValue(final int revokeDelayTimeValue) {
++        this.revokeDelayTimeValue = revokeDelayTimeValue;
+     }
+ 
+     public boolean isDeleteExpiredCrls() {
+@@ -98,6 +161,65 @@ public class DatabaseMaintenanceWorkerType extends BaseWorkerType {
+         this.deleteExpiredCrls = deleteExpiredCrls;
+     }
+ 
++    public String getRevocationReasons() {
++        return revocationReasons;
++    }
++
++    public void setRevocationReasons(final String revocationReasons) {
++        this.revocationReasons = revocationReasons;
++    }
++
++    /**
++     * JSF accessor — current selection for the multi-select listbox.
++     *
++     * <p>Backed by the same comma-separated {@link #revocationReasons} string
++     * the worker reads, so values set via the GUI listbox and values set via
++     * {@code ejbca.sh service edit worker.revocationReasons=SUPERSEDED,...}
++     * round-trip through the same property without conversion.
++     */
++    public List<String> getSelectedRevocationReasons() {
++        if (revocationReasons == null || revocationReasons.isEmpty()) {
++            return Collections.emptyList();
++        }
++        return Arrays.asList(revocationReasons.split("\\s*,\\s*"));
++    }
++
++    public void setSelectedRevocationReasons(final List<String> selected) {
++        if (selected == null || selected.isEmpty()) {
++            this.revocationReasons = "";
++        } else {
++            // Preserve order, deduplicate.
++            final LinkedHashSet<String> unique = new LinkedHashSet<>(selected);
++            this.revocationReasons = String.join(",", unique);
++        }
++    }
++
++    /**
++     * JSF accessor — the available revocation reasons to show in the listbox.
++     *
++     * <p>Matches the curated {@code reasonableRevocationReasons} set already
++     * defined in {@link RevocationReasons} (excludes NOT_REVOKED, both
++     * CA-compromise variants, CERTIFICATE_HOLD, and REMOVE_FROM_CRL, which
++     * aren't meaningful as "delete revoked certs" filter criteria for an
++     * operator scheduling a cleanup job). Each {@link SelectItem} uses the
++     * RFC 5280 string form (e.g. "SUPERSEDED") as the value and the
++     * enum's {@code humanReadable} label as the display text.
++     */
++    public List<SelectItem> getAvailableRevocationReasons() {
++        final List<SelectItem> items = new ArrayList<>();
++        for (final RevocationReasons r : new RevocationReasons[] {
++                RevocationReasons.UNSPECIFIED,
++                RevocationReasons.KEYCOMPROMISE,
++                RevocationReasons.AFFILIATIONCHANGED,
++                RevocationReasons.SUPERSEDED,
++                RevocationReasons.CESSATIONOFOPERATION,
++                RevocationReasons.PRIVILEGESWITHDRAWN,
++        }) {
++            items.add(new SelectItem(r.getStringValue(), r.getHumanReadable()));
++        }
++        return items;
++    }
++
+     public int getBatchSize() {
+         return batchSize;
+     }
+diff --git a/modules/cesecore-ejb-interface/src/org/cesecore/certificates/certificate/CertificateStoreSessionLocal.java b/modules/cesecore-ejb-interface/src/org/cesecore/certificates/certificate/CertificateStoreSessionLocal.java
+index 905d6d8e3b..c1b9a748af 100644
+--- a/modules/cesecore-ejb-interface/src/org/cesecore/certificates/certificate/CertificateStoreSessionLocal.java
++++ b/modules/cesecore-ejb-interface/src/org/cesecore/certificates/certificate/CertificateStoreSessionLocal.java
+@@ -436,4 +436,62 @@ public interface CertificateStoreSessionLocal extends CertificateStoreSession {
+     Set<String> deleteExpiredCertificatesInSeparateTransactions(List<String> issuerDns, Date maximumExpirationDate, int batchSize,
+             AuthenticationToken adminForLogging, Set<String> previousDeletedFingerprints);
+ 
++    /**
++     * Deletes a single revoked certificate row. No authorization check is done.
++     *
++     * <p>Intended for use by the Database Maintenance worker when the
++     * "Delete Revoked Certificates" option is enabled. Pairs with
++     * {@link #deleteExpiredCertificate} — that method covers the expired
++     * branch, this one covers the revoked-but-unexpired branch.
++     *
++     * @param certInfo The certificate to delete.
++     * @param adminForLogging The administrator to use in the log message.
++     * @throws IllegalStateException if the certificate is not in REVOKED status.
++     */
++    void deleteRevokedCertificate(final CertificateInfo certInfo, final AuthenticationToken adminForLogging);
++
++    /**
++     * Deletes certificate rows matching the AND-composition of the supplied
++     * criteria. All database operations run in separate transactions,
++     * batched at {@code batchSize} rows per cycle.
++     *
++     * <p>This is the unified primitive backing the Database Maintenance
++     * Worker's compositional cert-side filter — each non-null criterion
++     * contributes one conjunct to the underlying query, so the worker can
++     * express e.g. "expired AND revoked-with-reason" as a single deletion
++     * sweep rather than two independent passes.
++     *
++     * <p>Criterion semantics:
++     * <ul>
++     *   <li>{@code expiredBefore != null}: rows whose {@code expireDate} is
++     *       strictly earlier than the supplied cutoff are eligible.</li>
++     *   <li>{@code revocationReasons != null && !revocationReasons.isEmpty()}:
++     *       rows in REVOKED status whose {@code revocationReason} is in
++     *       the set are eligible, additionally constrained — when
++     *       {@code revokedBefore != null} — to rows whose
++     *       {@code revocationDate} is strictly earlier than the supplied
++     *       cutoff.</li>
++     *   <li>At least one criterion must be supplied; calling with all
++     *       criteria null/empty throws {@link IllegalArgumentException}.</li>
++     * </ul>
++     *
++     * <p>Per-row deletion routes through {@link #deleteRevokedCertificate}
++     * for rows in REVOKED status (preserves the {@code store.deletedrevokedcert}
++     * audit-log key) and {@link #deleteExpiredCertificate} otherwise
++     * (preserves {@code store.deletedexpiredcert}). The CertificateData
++     * mutation itself is identical in either path.
++     *
++     * @param issuerDns The issuer DNs, or null for all.
++     * @param expiredBefore Cutoff for the expired criterion, or null to omit it.
++     * @param revokedBefore Cutoff for the revocation-date sub-clause of the revoked criterion, or null to catch any revocation date.
++     * @param revocationReasons Reasons for the revoked criterion, or null/empty to omit the revoked criterion entirely.
++     * @param batchSize Batch size.
++     * @param adminForLogging The administrator to use in the log message.
++     * @param previousDeletedFingerprints The certificates that were deleted in the previous execution. Used as a safety precaution to prevent an endless loop.
++     * @return The fingerprints of the certificates that were deleted.
++     */
++    Set<String> deleteCertificatesMatchingInSeparateTransactions(List<String> issuerDns, Date expiredBefore, Date revokedBefore,
++            Set<RevocationReasons> revocationReasons, int batchSize,
++            AuthenticationToken adminForLogging, Set<String> previousDeletedFingerprints);
++
+ }
+diff --git a/modules/cesecore-ejb/src/org/cesecore/certificates/certificate/CertificateStoreSessionBean.java b/modules/cesecore-ejb/src/org/cesecore/certificates/certificate/CertificateStoreSessionBean.java
+index 784781a72a..9d81e786b5 100644
+--- a/modules/cesecore-ejb/src/org/cesecore/certificates/certificate/CertificateStoreSessionBean.java
++++ b/modules/cesecore-ejb/src/org/cesecore/certificates/certificate/CertificateStoreSessionBean.java
+@@ -920,6 +920,140 @@ public class CertificateStoreSessionBean implements CertificateStoreSessionRemot
+         return currentlyDeletedFingerprints;
+     }
+ 
++    @Override
++    @TransactionAttribute(TransactionAttributeType.REQUIRED)
++    public void deleteRevokedCertificate(final CertificateInfo certInfo, final AuthenticationToken adminForLogging) {
++        if (certInfo.getStatus() != CertificateConstants.CERT_REVOKED) {
++            throw new IllegalStateException("Certificate " + certInfo.getSerialNumberHex() +
++                    " is not in REVOKED status (current status=" + certInfo.getStatus() + ")");
++        }
++        final Query deleteQuery = entityManager.createQuery("DELETE FROM CertificateData a WHERE a.fingerprint = :fingerprint");
++        deleteQuery.setParameter("fingerprint", certInfo.getFingerprint());
++        deleteQuery.executeUpdate();
++
++        final String caIdString = (certInfo.getIssuerDN() != null ? String.valueOf(certInfo.getIssuerDN().hashCode()) : null);
++        final String detailsMsg = InternalResources.getInstance().getLocalizedMessage("store.deletedrevokedcert",
++                caIdString, certInfo.getSerialNumberHex());
++        logSession.log(EventTypes.CERT_CLEANUP, EventStatus.SUCCESS, ModuleTypes.CERTIFICATE, ServiceTypes.CORE, adminForLogging.toString(),
++                caIdString, certInfo.getSerialNumberHex(), certInfo.getUsername(), detailsMsg);
++    }
++
++    @Override
++    @TransactionAttribute(TransactionAttributeType.NOT_SUPPORTED)
++    public Set<String> deleteCertificatesMatchingInSeparateTransactions(final List<String> issuerDns,
++            final Date expiredBefore, final Date revokedBefore,
++            final Set<RevocationReasons> revocationReasons, final int batchSize,
++            final AuthenticationToken adminForLogging, final Set<String> previousDeletedFingerprints) {
++        final boolean expiredCriterion = (expiredBefore != null);
++        final boolean revokedCriterion = (revocationReasons != null && !revocationReasons.isEmpty());
++        if (!expiredCriterion && !revokedCriterion) {
++            throw new IllegalArgumentException(
++                    "At least one criterion must be supplied (expiredBefore or non-empty revocationReasons).");
++        }
++        final Set<String> currentlyDeletedFingerprints = new HashSet<>();
++        final List<CertificateInfo> certInfos = findCertificatesMatching(
++                issuerDns, expiredBefore, revokedBefore, revocationReasons, batchSize);
++        for (final CertificateInfo certInfo : certInfos) {
++            if (previousDeletedFingerprints.contains(certInfo.getFingerprint())) {
++                throw new IllegalStateException("Certificate still exists after deletion! Certificate serial number: " + certInfo.getSerialNumberHex() +
++                        ", fingerprint: " + certInfo.getFingerprint());
++            } else {
++                // Per-row delete dispatches on status: REVOKED rows use the
++                // revoked single-row primitive (preserves the
++                // store.deletedrevokedcert audit-log key); everything else
++                // uses the expired single-row primitive (preserves
++                // store.deletedexpiredcert). The actual CertificateData
++                // DELETE is identical in either path.
++                if (certInfo.getStatus() == CertificateConstants.CERT_REVOKED) {
++                    certificateStoreSession.deleteRevokedCertificate(certInfo, adminForLogging);
++                } else {
++                    certificateStoreSession.deleteExpiredCertificate(certInfo, adminForLogging);
++                }
++                currentlyDeletedFingerprints.add(certInfo.getFingerprint());
++            }
++        }
++        return currentlyDeletedFingerprints;
++    }
++
++    /**
++     * Private helper for {@link #deleteCertificatesMatchingInSeparateTransactions}.
++     * Builds a JPQL query whose WHERE clause is the AND-composition of the
++     * supplied criteria, runs it, and resolves each returned fingerprint to
++     * a {@link CertificateInfo} via the existing
++     * {@code getCertificateInfo(fingerprint)} method. Returns at most
++     * {@code maxNumberOfResults} entries.
++     *
++     * <p>Composition rules:
++     * <ul>
++     *   <li>{@code issuerDns} non-null/non-empty: adds
++     *       {@code AND a.issuerDN IN :issuerDns}.</li>
++     *   <li>{@code expiredBefore} non-null: adds
++     *       {@code AND a.expireDate < :expiredBefore}.</li>
++     *   <li>{@code revocationReasons} non-null/non-empty: adds
++     *       {@code AND a.status = REVOKED AND a.revocationReason IN :reasons},
++     *       plus {@code AND a.revocationDate < :revokedBefore} when
++     *       {@code revokedBefore} is also non-null.</li>
++     * </ul>
++     */
++    private List<CertificateInfo> findCertificatesMatching(final Collection<String> issuerDns,
++            final Date expiredBefore, final Date revokedBefore,
++            final Set<RevocationReasons> revocationReasons, final int maxNumberOfResults) {
++        final boolean hasIssuerFilter = (issuerDns != null && !issuerDns.isEmpty());
++        final boolean hasExpiredCriterion = (expiredBefore != null);
++        final boolean hasRevokedCriterion = (revocationReasons != null && !revocationReasons.isEmpty());
++        final boolean hasRevokedDateClause = hasRevokedCriterion && (revokedBefore != null);
++        if (!hasExpiredCriterion && !hasRevokedCriterion) {
++            return Collections.emptyList();
++        }
++        final StringBuilder jpql = new StringBuilder("SELECT a.fingerprint FROM CertificateData a WHERE 1=1 ");
++        if (hasIssuerFilter) {
++            jpql.append("AND a.issuerDN IN :issuerDns ");
++        }
++        if (hasExpiredCriterion) {
++            jpql.append("AND a.expireDate < :expiredBefore ");
++        }
++        if (hasRevokedCriterion) {
++            // status IN (REVOKED, ARCHIVED) — catches both still-status=40 rows
++            // and rows that have already passed through EJBCA's archival
++            // housekeeping (status=60). revocationReason is set on both.
++            jpql.append("AND a.status IN :revokedStatuses ");
++            jpql.append("AND a.revocationReason IN :reasons ");
++            if (hasRevokedDateClause) {
++                jpql.append("AND a.revocationDate < :revokedBefore ");
++            }
++        }
++        final Query query = entityManager.createQuery(jpql.toString());
++        if (hasIssuerFilter) {
++            query.setParameter("issuerDns", issuerDns);
++        }
++        if (hasExpiredCriterion) {
++            query.setParameter("expiredBefore", expiredBefore.getTime());
++        }
++        if (hasRevokedCriterion) {
++            query.setParameter("revokedStatuses", Arrays.asList(
++                    CertificateConstants.CERT_REVOKED, CertificateConstants.CERT_ARCHIVED));
++            final List<Integer> reasonCodes = new ArrayList<>(revocationReasons.size());
++            for (final RevocationReasons reason : revocationReasons) {
++                reasonCodes.add(reason.getDatabaseValue());
++            }
++            query.setParameter("reasons", reasonCodes);
++            if (hasRevokedDateClause) {
++                query.setParameter("revokedBefore", revokedBefore.getTime());
++            }
++        }
++        query.setMaxResults(maxNumberOfResults);
++        @SuppressWarnings("unchecked")
++        final List<String> fingerprints = query.getResultList();
++        final List<CertificateInfo> result = new ArrayList<>(fingerprints.size());
++        for (final String fingerprint : fingerprints) {
++            final CertificateInfo info = getCertificateInfo(fingerprint);
++            if (info != null) {
++                result.add(info);
++            }
++        }
++        return result;
++    }
++
+     @Override
+     public boolean existsByIssuerAndSerno(String issuerDN, BigInteger serno) {
+         if (log.isTraceEnabled()) {
+diff --git a/modules/ejbca-common-web/src/org/ejbca/core/model/services/workers/DatabaseMaintenanceWorker.java b/modules/ejbca-common-web/src/org/ejbca/core/model/services/workers/DatabaseMaintenanceWorker.java
+new file mode 100644
+index 0000000000..9bfdee2419
+--- /dev/null
++++ b/modules/ejbca-common-web/src/org/ejbca/core/model/services/workers/DatabaseMaintenanceWorker.java
+@@ -0,0 +1,390 @@
++/*************************************************************************
++ *                                                                       *
++ *  EJBCA Community: The OpenSource Certificate Authority                *
++ *                                                                       *
++ *  This software is free software; you can redistribute it and/or       *
++ *  modify it under the terms of the GNU Lesser General Public           *
++ *  License as published by the Free Software Foundation; either         *
++ *  version 2.1 of the License, or any later version.                    *
++ *                                                                       *
++ *  See terms of license at gnu.org.                                     *
++ *                                                                       *
++ *************************************************************************/
++package org.ejbca.core.model.services.workers;
++
++import java.util.ArrayList;
++import java.util.Date;
++import java.util.EnumSet;
++import java.util.HashSet;
++import java.util.List;
++import java.util.Map;
++import java.util.Set;
++
++import org.apache.commons.lang.StringUtils;
++import org.apache.log4j.Logger;
++import org.cesecore.certificates.ca.CAInfo;
++import org.cesecore.certificates.ca.CaSessionLocal;
++import org.cesecore.certificates.certificate.CertificateStoreSessionLocal;
++import org.cesecore.certificates.crl.CrlMetadataHolderDto;
++import org.cesecore.certificates.crl.CrlStoreSessionLocal;
++import org.cesecore.certificates.crl.RevocationReasons;
++import org.ejbca.core.model.services.BaseWorker;
++import org.ejbca.core.model.services.ServiceExecutionFailedException;
++import org.ejbca.core.model.services.ServiceExecutionResult;
++import org.ejbca.core.model.services.ServiceExecutionResult.Result;
++
++/**
++ * JohnB: Database Maintenance Worker — periodic cleanup of certificate and CRL rows.
++ *
++ * <p>The cert-side cleanup is controlled by a three-way mutually-exclusive
++ * radio of deletion modes
++ * ({@link DatabaseMaintenanceWorkerConstants#PROP_CERT_DELETION_MODE}):
++ *
++ * <ul>
++ *   <li>{@link DatabaseMaintenanceWorkerConstants#MODE_EXPIRED} —
++ *       default operational mode. Sweeps any cert past its
++ *       {@code notAfter} regardless of revocation status. Filter clause:
++ *       {@code expireDate < now − delayAfterExpiration} (delay from
++ *       {@link DatabaseMaintenanceWorkerConstants#PROP_DELAY_TIMEUNIT} /
++ *       {@link DatabaseMaintenanceWorkerConstants#PROP_DELAY_TIMEVALUE}).
++ *       Catches the {@code E} (naturally expired) and {@code R}
++ *       (revoked-and-expired) lifecycle buckets.</li>
++ *   <li>{@link DatabaseMaintenanceWorkerConstants#MODE_REVOKED} —
++ *       cleanup mode for accumulated revoked-by-reason zombies. Sweeps
++ *       any cert whose {@code revocationReason} is in the operator-selected
++ *       set ({@link DatabaseMaintenanceWorkerConstants#PROP_REVOCATION_REASONS}),
++ *       regardless of expiry. Filter clause:
++ *       {@code status IN (REVOKED, ARCHIVED) AND revocationReason IN :reasons
++ *       AND revocationDate < now − delayAfterRevocation} (revoke-delay from
++ *       {@link DatabaseMaintenanceWorkerConstants#PROP_REVOKE_DELAY_TIMEUNIT} /
++ *       {@link DatabaseMaintenanceWorkerConstants#PROP_REVOKE_DELAY_TIMEVALUE}).
++ *       Catches the {@code r} (revoked-but-not-yet-expired) and
++ *       {@code R} (revoked-and-expired, including the ARCHIVED
++ *       {@code status=60} substate) lifecycle buckets — the widened
++ *       {@code status IN (REVOKED, ARCHIVED)} clause vs the older
++ *       {@code status = REVOKED} formulation is the critical design fix
++ *       that prevents rows from escaping the sweep once EJBCA's
++ *       post-expiry housekeeping has transitioned them from
++ *       {@code status=40} to {@code status=60}.</li>
++ *   <li>{@link DatabaseMaintenanceWorkerConstants#MODE_NONE} — safety
++ *       default for fresh workers. Skips all cert-side work; only the
++ *       independent CRL sweep runs if its checkbox is enabled.</li>
++ * </ul>
++ *
++ * <p>An operator who wants OR-of-modes semantics (e.g. <em>"reap
++ * naturally-expired rows AND, separately, reap accumulated
++ * SUPERSEDED-revoked zombies"</em>) configures multiple worker entries on
++ * the Manage Services page — one entry per mode. EJBCA's service scheduler
++ * already serialises by worker, so stacked workers are operationally cheap.
++ *
++ * <p>Backward compatibility for pre-radio configurations is handled by
++ * {@link #resolveCertDeletionMode()}: if {@code PROP_CERT_DELETION_MODE}
++ * is absent (legacy config from an EE worker bag), the mode is derived
++ * from the legacy
++ * {@link DatabaseMaintenanceWorkerConstants#PROP_DELETE_EXPIRED_CERTIFICATES}
++ * and
++ * {@link DatabaseMaintenanceWorkerConstants#PROP_DELETE_REVOKED_CERTIFICATES}
++ * booleans. Going forward the radio constant is the source of truth and
++ * the legacy booleans are read-only for migration purposes.
++ *
++ * <p>The CRL-side cleanup
++ * ({@link DatabaseMaintenanceWorkerConstants#PROP_DELETE_EXPIRED_CRLS}) is
++ * a separate sweep over {@code CRLData} — independent of the cert-side
++ * radio (it operates on a different table) and runs whenever its
++ * checkbox is ticked regardless of which cert-deletion mode is selected,
++ * including {@code MODE_NONE}. It uses the same {@code delayAfterExpiration}
++ * value as {@code MODE_EXPIRED}. All deletions run in separate
++ * transactions to avoid long table locks.
++ */
++public class DatabaseMaintenanceWorker extends BaseWorker {
++
++    private static final Logger log = Logger.getLogger(DatabaseMaintenanceWorker.class);
++
++    /** Cap on the number of expired CRLs purged per worker invocation, per issuer. */
++    private static final int CRL_PURGE_PER_ISSUER_CAP = 10_000;
++
++    @Override
++    public void canWorkerRun(final Map<Class<?>, Object> ejbs) throws ServiceExecutionFailedException {
++        // No prerequisites — the database is always available; the worker is
++        // a no-op when no match criteria are enabled. Validation of the
++        // numeric/enumeration properties happens in work() so the operator
++        // sees the failure in the service-run log rather than at config time.
++    }
++
++    @Override
++    public ServiceExecutionResult work(final Map<Class<?>, Object> ejbs) throws ServiceExecutionFailedException {
++        // Normalize property names: the admin-gui form sets worker-specific
++        // properties without a prefix (e.g. 'certDeletionMode=REVOKED'), but
++        // the `ejbca.sh service create/edit` CLI only accepts properties
++        // whose names start with 'worker.' for a brand-new service. Copy
++        // any worker.X=v entries to a bare X=v key so this worker can be
++        // configured equally from either path.
++        normaliseWorkerPropertyPrefixes();
++
++        final String certMode = resolveCertDeletionMode();
++        final boolean matchExpiredCrls = readBoolean(DatabaseMaintenanceWorkerConstants.PROP_DELETE_EXPIRED_CRLS);
++
++        if (DatabaseMaintenanceWorkerConstants.MODE_NONE.equals(certMode) && !matchExpiredCrls) {
++            return new ServiceExecutionResult(Result.NO_ACTION,
++                    "Database Maintenance Worker: cert deletion mode is NONE and CRL deletion disabled.");
++        }
++
++        final int batchSize = readBatchSize();
++
++        final CertificateStoreSessionLocal certStore =
++                (CertificateStoreSessionLocal) ejbs.get(CertificateStoreSessionLocal.class);
++        final CrlStoreSessionLocal crlStore =
++                (CrlStoreSessionLocal) ejbs.get(CrlStoreSessionLocal.class);
++        final CaSessionLocal caSession =
++                (CaSessionLocal) ejbs.get(CaSessionLocal.class);
++
++        int certDeletedCount = 0;
++        int expiredCrlCount = 0;
++        final List<String> failures = new ArrayList<>();
++
++        // Cert-side: dispatch on the radio mode.
++        // MODE_EXPIRED — catches E + R (everything past notAfter regardless of revocation).
++        // MODE_REVOKED — catches r + R (everything revoked-by-reason regardless of expiry).
++        // MODE_NONE    — skip cert deletion entirely.
++        try {
++            if (DatabaseMaintenanceWorkerConstants.MODE_EXPIRED.equals(certMode)) {
++                final Date expiredBefore = computeExpiredBefore();
++                final Set<String> deleted = certStore.deleteCertificatesMatchingInSeparateTransactions(
++                        /* issuerDns = */ null, expiredBefore, /* revokedBefore = */ null,
++                        /* revocationReasons = */ null, batchSize, admin, new HashSet<>());
++                certDeletedCount = deleted.size();
++                if (log.isDebugEnabled()) {
++                    log.debug("Deleted " + certDeletedCount + " cert row(s) — MODE_EXPIRED, expiredBefore=" + expiredBefore);
++                }
++            } else if (DatabaseMaintenanceWorkerConstants.MODE_REVOKED.equals(certMode)) {
++                final Date revokedBefore = computeRevokedBefore();
++                final Set<RevocationReasons> reasons = parseRevocationReasons();
++                if (reasons.isEmpty()) {
++                    failures.add("MODE_REVOKED: no valid revocation reasons configured (property '"
++                            + DatabaseMaintenanceWorkerConstants.PROP_REVOCATION_REASONS + "').");
++                } else {
++                    final Set<String> deleted = certStore.deleteCertificatesMatchingInSeparateTransactions(
++                            /* issuerDns = */ null, /* expiredBefore = */ null, revokedBefore, reasons,
++                            batchSize, admin, new HashSet<>());
++                    certDeletedCount = deleted.size();
++                    if (log.isDebugEnabled()) {
++                        log.debug("Deleted " + certDeletedCount + " cert row(s) — MODE_REVOKED, revokedBefore="
++                                + revokedBefore + ", reasons=" + reasons);
++                    }
++                }
++            }
++            // MODE_NONE: no-op for cert deletion.
++        } catch (ServiceExecutionFailedException e) {
++            failures.add("Certificate deletion (" + certMode + "): " + e.getMessage());
++        } catch (RuntimeException e) {
++            log.error("Database Maintenance Worker: error during certificate sweep (" + certMode + ").", e);
++            failures.add("Certificate deletion (" + certMode + "): " + e.getMessage());
++        }
++
++        // CRL-side: independent of cert deletion mode.
++        if (matchExpiredCrls) {
++            try {
++                final Date expiredBefore = computeExpiredBefore();
++                expiredCrlCount = purgeExpiredCrls(crlStore, caSession, expiredBefore);
++                if (log.isDebugEnabled()) {
++                    log.debug("Deleted " + expiredCrlCount + " expired CRL row(s) older than " + expiredBefore);
++                }
++            } catch (ServiceExecutionFailedException e) {
++                failures.add("Match expired CRLs: " + e.getMessage());
++            } catch (RuntimeException e) {
++                log.error("Database Maintenance Worker: error deleting expired CRLs.", e);
++                failures.add("Match expired CRLs: " + e.getMessage());
++            }
++        }
++
++        return summarise(certDeletedCount, expiredCrlCount, failures);
++    }
++
++    /**
++     * Read the cert-deletion mode from properties, falling back to the legacy
++     * boolean flags (deleteExpiredCertificates / deleteRevokedCertificates)
++     * when PROP_CERT_DELETION_MODE is absent — for backward compatibility
++     * with pre-radio worker configurations that used the dual-flag form.
++     */
++    private String resolveCertDeletionMode() {
++        final String explicit = properties.getProperty(
++                DatabaseMaintenanceWorkerConstants.PROP_CERT_DELETION_MODE);
++        if (explicit != null && !explicit.trim().isEmpty()) {
++            return explicit.trim();
++        }
++        // Legacy fallback — derive from old booleans.
++        if (readBoolean(DatabaseMaintenanceWorkerConstants.PROP_DELETE_EXPIRED_CERTIFICATES)) {
++            return DatabaseMaintenanceWorkerConstants.MODE_EXPIRED;
++        }
++        if (readBoolean(DatabaseMaintenanceWorkerConstants.PROP_DELETE_REVOKED_CERTIFICATES)) {
++            return DatabaseMaintenanceWorkerConstants.MODE_REVOKED;
++        }
++        return DatabaseMaintenanceWorkerConstants.MODE_NONE;
++    }
++
++    /* ---------- helpers ---------- */
++
++    /**
++     * Copies any {@code worker.X=v} entry to a bare {@code X=v} key when the
++     * unprefixed form isn't already present. The unprefixed form is what the
++     * admin-gui form and the worker code itself use; the prefixed form is
++     * the only way {@code ejbca.sh service create} will accept a previously
++     * unknown property at the CLI. This lets the worker be configured
++     * equally from either path.
++     */
++    private void normaliseWorkerPropertyPrefixes() {
++        final String prefix = "worker.";
++        for (final String key : new java.util.ArrayList<>(properties.stringPropertyNames())) {
++            if (key.startsWith(prefix)) {
++                final String unprefixed = key.substring(prefix.length());
++                if (!properties.containsKey(unprefixed)) {
++                    properties.setProperty(unprefixed, properties.getProperty(key));
++                }
++            }
++        }
++    }
++
++    /**
++     * Returns {@code now − delayAfterExpiration} for the expired criterion
++     * and the CRL cleanup. Uses {@link BaseWorker#getTimeBeforeExpire(String, String)}
++     * which throws on a 0-value — that's correct here because the expired
++     * criterion is meant to operate on a non-zero quarantine window.
++     */
++    private Date computeExpiredBefore() throws ServiceExecutionFailedException {
++        final long delayMillis = getTimeBeforeExpire(
++                DatabaseMaintenanceWorkerConstants.PROP_DELAY_TIMEUNIT,
++                DatabaseMaintenanceWorkerConstants.PROP_DELAY_TIMEVALUE);
++        return new Date(System.currentTimeMillis() - delayMillis);
++    }
++
++    /**
++     * Returns {@code now − delayAfterRevocation} for the revoked criterion.
++     * Inlined (rather than calling {@link BaseWorker#getTimeBeforeExpire(String, String)})
++     * because that helper caches its first result on the worker instance,
++     * which would conflict with the separate call for the expired criterion.
++     *
++     * <p>0 is a valid choice here (no quarantine — reap on the next tick),
++     * unlike the expired branch where 0 is rejected by BaseWorker.
++     */
++    private Date computeRevokedBefore() throws ServiceExecutionFailedException {
++        final String unit = properties.getProperty(
++                DatabaseMaintenanceWorkerConstants.PROP_REVOKE_DELAY_TIMEUNIT,
++                DatabaseMaintenanceWorkerConstants.DEFAULT_REVOKE_DELAY_TIMEUNIT);
++        final String value = properties.getProperty(
++                DatabaseMaintenanceWorkerConstants.PROP_REVOKE_DELAY_TIMEVALUE,
++                String.valueOf(DatabaseMaintenanceWorkerConstants.DEFAULT_REVOKE_DELAY_TIMEVALUE));
++        final int intValue;
++        try {
++            intValue = Integer.parseInt(value.trim());
++        } catch (NumberFormatException e) {
++            throw new ServiceExecutionFailedException(
++                    "Database Maintenance Worker: revoke-delay value '" + value + "' is not a number");
++        }
++        if (intValue < 0) {
++            throw new ServiceExecutionFailedException(
++                    "Database Maintenance Worker: revoke-delay value must be non-negative (got " + intValue + ")");
++        }
++        final int seconds = timeUnitToSeconds(unit);
++        return new Date(System.currentTimeMillis() - (long) intValue * seconds * 1000L);
++    }
++
++    /** Reads a boolean property, defaulting to {@code false} if missing or malformed. */
++    private boolean readBoolean(final String key) {
++        return Boolean.parseBoolean(properties.getProperty(key));
++    }
++
++    /** Reads the batch-size property, falling back to {@link DatabaseMaintenanceWorkerConstants#DEFAULT_BATCH_SIZE}. */
++    private int readBatchSize() {
++        final String raw = properties.getProperty(DatabaseMaintenanceWorkerConstants.PROP_BATCH_SIZE);
++        if (StringUtils.isBlank(raw)) {
++            return DatabaseMaintenanceWorkerConstants.DEFAULT_BATCH_SIZE;
++        }
++        try {
++            final int value = Integer.parseInt(raw.trim());
++            return value > 0 ? value : DatabaseMaintenanceWorkerConstants.DEFAULT_BATCH_SIZE;
++        } catch (NumberFormatException e) {
++            log.warn("Database Maintenance Worker: '" + DatabaseMaintenanceWorkerConstants.PROP_BATCH_SIZE
++                    + "' is not a number (got '" + raw + "'); using default "
++                    + DatabaseMaintenanceWorkerConstants.DEFAULT_BATCH_SIZE);
++            return DatabaseMaintenanceWorkerConstants.DEFAULT_BATCH_SIZE;
++        }
++    }
++
++    /**
++     * Parses {@link DatabaseMaintenanceWorkerConstants#PROP_REVOCATION_REASONS}
++     * into a {@link Set} of {@link RevocationReasons}. Tokens that do not
++     * match a known enum name are logged at WARN and dropped.
++     */
++    private Set<RevocationReasons> parseRevocationReasons() {
++        final String raw = properties.getProperty(
++                DatabaseMaintenanceWorkerConstants.PROP_REVOCATION_REASONS,
++                DatabaseMaintenanceWorkerConstants.DEFAULT_REVOCATION_REASONS);
++        final Set<RevocationReasons> result = EnumSet.noneOf(RevocationReasons.class);
++        for (final String token : raw.split(",")) {
++            final String trimmed = token.trim();
++            if (trimmed.isEmpty()) {
++                continue;
++            }
++            try {
++                result.add(RevocationReasons.valueOf(trimmed));
++            } catch (IllegalArgumentException e) {
++                log.warn("Database Maintenance Worker: unknown revocation reason '" + trimmed
++                        + "' in property '" + DatabaseMaintenanceWorkerConstants.PROP_REVOCATION_REASONS
++                        + "'; ignoring.");
++            }
++        }
++        return result;
++    }
++
++    /**
++     * Iterates every CA in the system, queries for expired CRLs whose
++     * {@code nextUpdate} is older than {@code maximumDate}, and deletes each
++     * one — keeping the most recent base and delta CRL for the issuer (the
++     * underlying query excludes the latest CRL numbers).
++     *
++     * @return total number of CRLs deleted across all issuers.
++     */
++    private int purgeExpiredCrls(final CrlStoreSessionLocal crlStore, final CaSessionLocal caSession,
++            final Date maximumDate) {
++        int totalDeleted = 0;
++        final List<Integer> caIds = caSession.getAllCaIds();
++        for (final Integer caId : caIds) {
++            final CAInfo caInfo = caSession.getCAInfoInternal(caId);
++            if (caInfo == null) {
++                continue;
++            }
++            final String issuerDn = caInfo.getSubjectDN();
++            if (StringUtils.isBlank(issuerDn)) {
++                continue;
++            }
++            final int lastBaseCrlNumber = crlStore.getLastCRLNumber(issuerDn, 0, /* deltaCRL = */ false);
++            final int lastDeltaCrlNumber = crlStore.getLastCRLNumber(issuerDn, 0, /* deltaCRL = */ true);
++            final List<CrlMetadataHolderDto> expired = crlStore.findExpiredCrlByIssuerDn(
++                    issuerDn, maximumDate.getTime(), lastBaseCrlNumber, lastDeltaCrlNumber,
++                    CRL_PURGE_PER_ISSUER_CAP);
++            for (final CrlMetadataHolderDto holder : expired) {
++                crlStore.delete(holder, admin);
++                totalDeleted++;
++            }
++            if (log.isDebugEnabled() && !expired.isEmpty()) {
++                log.debug("Deleted " + expired.size() + " expired CRL(s) for issuer '" + issuerDn + "'.");
++            }
++        }
++        return totalDeleted;
++    }
++
++    private ServiceExecutionResult summarise(final int certDeletedCount, final int expiredCrls,
++            final List<String> failures) {
++        final String summary = "Database Maintenance Worker: deleted " + certDeletedCount
++                + " certificate(s) matching criteria, " + expiredCrls + " expired CRL(s).";
++        if (!failures.isEmpty()) {
++            return new ServiceExecutionResult(Result.FAILURE,
++                    summary + " Errors: " + constructNameList(failures));
++        }
++        if (certDeletedCount == 0 && expiredCrls == 0) {
++            return new ServiceExecutionResult(Result.NO_ACTION,
++                    "Database Maintenance Worker: nothing matched the configured filters.");
++        }
++        return new ServiceExecutionResult(Result.SUCCESS, summary);
++    }
++}
+diff --git a/modules/ejbca-common-web/src/org/ejbca/core/model/services/workers/DatabaseMaintenanceWorkerConstants.java b/modules/ejbca-common-web/src/org/ejbca/core/model/services/workers/DatabaseMaintenanceWorkerConstants.java
+index 5800be90c8..f80f393ff2 100644
+--- a/modules/ejbca-common-web/src/org/ejbca/core/model/services/workers/DatabaseMaintenanceWorkerConstants.java
++++ b/modules/ejbca-common-web/src/org/ejbca/core/model/services/workers/DatabaseMaintenanceWorkerConstants.java
+@@ -21,11 +21,43 @@ public final class DatabaseMaintenanceWorkerConstants {
+     public static final String WORKER_CLASS = "org.ejbca.core.model.services.workers.DatabaseMaintenanceWorker";
+     public static final String DEFAULT_DELAY_TIMEUNIT = IWorker.UNIT_DAYS;
+     public static final int DEFAULT_DELAY_TIMEVALUE = 30;
++    public static final String DEFAULT_REVOKE_DELAY_TIMEUNIT = IWorker.UNIT_HOURS;
++    public static final int DEFAULT_REVOKE_DELAY_TIMEVALUE = 1;
+     public static final int DEFAULT_BATCH_SIZE = 100;
++    /** Default reason filter for the "Delete revoked certificates" mode — RFC 5280 SUPERSEDED. */
++    public static final String DEFAULT_REVOCATION_REASONS = "SUPERSEDED";
++
++    // --- Certificate deletion mode (radio) ---------------------------------
++    /** Property key for the mutually-exclusive cert-deletion mode. */
++    public static final String PROP_CERT_DELETION_MODE = "certDeletionMode";
++    /** No cert deletion — worker only operates on CRLs (if enabled). */
++    public static final String MODE_NONE = "NONE";
++    /** Delete any cert past its notAfter (catches E + R lifecycle buckets). */
++    public static final String MODE_EXPIRED = "EXPIRED";
++    /** Delete any revoked-by-reason cert regardless of expiry (catches r + R lifecycle buckets). */
++    public static final String MODE_REVOKED = "REVOKED";
++    /** Default mode for a fresh worker — operator opts in explicitly. */
++    public static final String DEFAULT_CERT_DELETION_MODE = MODE_NONE;
++
++    /** Delay between a certificate's notAfter and when MODE_EXPIRED considers it eligible. */
+     public static final String PROP_DELAY_TIMEUNIT = "delayTimeUnit";
+     public static final String PROP_DELAY_TIMEVALUE = "delayTimeValue";
++    /** Delay between a certificate's revocation timestamp and when MODE_REVOKED considers it eligible. */
++    public static final String PROP_REVOKE_DELAY_TIMEUNIT = "revokeDelayTimeUnit";
++    public static final String PROP_REVOKE_DELAY_TIMEVALUE = "revokeDelayTimeValue";
++
++    // --- Legacy boolean flags ---------------------------------------------
++    // Kept for backward compatibility with pre-radio worker configurations
++    // (e.g. EE installations with deleteExpiredCertificates=true). The bean
++    // derives certDeletionMode from these when PROP_CERT_DELETION_MODE is
++    // absent. Going forward, PROP_CERT_DELETION_MODE is the source of truth.
+     public static final String PROP_DELETE_EXPIRED_CERTIFICATES = "deleteExpiredCertificates";
++    public static final String PROP_DELETE_REVOKED_CERTIFICATES = "deleteRevokedCertificates";
++
++    /** CRL-side cleanup (independent of cert-deletion mode). */
+     public static final String PROP_DELETE_EXPIRED_CRLS = "deleteExpiredCrls";
++    /** Comma-separated RFC 5280 reason names (e.g. {@code "SUPERSEDED,CESSATION_OF_OPERATION"}) used by MODE_REVOKED. */
++    public static final String PROP_REVOCATION_REASONS = "revocationReasons";
+     public static final String PROP_BATCH_SIZE = "batchSize";
+ 
+     private DatabaseMaintenanceWorkerConstants() {
+diff --git a/src/intresources/intresources.en.properties b/src/intresources/intresources.en.properties
+index e338899159..2a368a4c8c 100644
+--- a/src/intresources/intresources.en.properties
++++ b/src/intresources/intresources.en.properties
+@@ -162,6 +162,7 @@ store.editedprofile = Edited certificateprofile {0}.
+ store.erroreditprofile = Error editing certificateprofile {0}.
+ store.editapprovalprofilenotauthorized = Admin '{0}' is not authorized to edit approval profiles.
+ store.deletedexpiredcert = Deleted certificate with serial number {1} and CA ID {0}
++store.deletedrevokedcert = Deleted revoked certificate with serial number {1} and CA ID {0}
+ store.deleteexpiredcrl = Deleted CRL with fingerprint {0} and CA ID {1}
+ 
+ endentity.extendedinfoupgrade = Upgrading extended information with version {0}.

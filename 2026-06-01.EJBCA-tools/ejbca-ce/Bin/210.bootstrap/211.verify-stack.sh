@@ -4,12 +4,13 @@
 # Checks:
 #   - both containers running
 #   - MariaDB ejbca schema has tables
-#   - EJBCA health endpoint returns ALLOK on HTTP
+#   - EJBCA 8080 health endpoint (diagnostic only — IP-gated, never ALLOK
+#     from the host; the real readiness gate is the HTTPS Admin GUI below)
 #   - HTTPS Admin GUI handshake succeeds
 #
 # Idempotent and read-only. Safe to re-run any time.
 
-version='1.1.0'
+version='1.2.0'   # 1.2.0 — 8080 health probe fully non-fatal (handles 000 / missing body)
 
 set -euo pipefail
 
@@ -54,7 +55,8 @@ echo "=== EJBCA health endpoint (HTTP 8080) ==="
 mkdir -p /tmp/claude/elt
 curl -s --max-time 5 -o /tmp/claude/elt/ejbca-health -w "  HTTP %{http_code}  body=" \
     http://${HOST}:8080/ejbca/publicweb/healthcheck/ejbcahealth || true
-cat /tmp/claude/elt/ejbca-health; echo
+cat /tmp/claude/elt/ejbca-health 2>/dev/null || printf '(no body — 8080 lags 8443, IP-gated)'
+echo
 rm -f /tmp/claude/elt/ejbca-health
 
 echo

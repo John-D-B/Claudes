@@ -34,7 +34,7 @@ services:
       start_period: 30s
 
   ejbca:
-    image: ejbca-ce:local-fixes         # built by ./Bin/3.3-build-local-image.sh (base: keyfactor/ejbca-ce:latest, 9.3.7)
+    image: keyfactor/ejbca-ce:latest    # upstream base (9.3.7) for first boot; 231 builds + 232 swaps to ejbca-ce:local-fixes
     container_name: ejbca-ce
     # Stable in-container hostname. Without this, docker assigns a random
     # 12-hex container ID as hostname, and EJBCA's bootstrap persists the
