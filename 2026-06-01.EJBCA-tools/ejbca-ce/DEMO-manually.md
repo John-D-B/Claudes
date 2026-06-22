@@ -71,10 +71,10 @@ These are marked "N/A" in the Log column.
 
 | # | Step | Command | Log |
 |---|---|---|---|
-| A01 | Create a clean working directory<br/>&nbsp; and the certs + local dirs | `$ mkdir -p /tmp/claude/demo/`<br/>`$ cd /tmp/claude/demo/`<br/>`$ export certsDir="$(pwd)/certs/"`<br/>`$ export localDir="$(pwd)/local/"`<br/>`$ export logDir="$(pwd)/logs/"`<br/>`$ mkdir -p "$certsDir" "$localDir" "$logDir"` | N/A |
-| A02 | Clone the bundle and anchor `topDir` | `$ git clone https://github.com/John-D-B/Claudes.git`<br/>`$ cd Claudes/2026-06-01.EJBCA-tools/`<br/>`$ topDir=$(pwd)` | *Manual*<br/>`A02-clone` |
+| A01 | Create a clean working<br/>&nbsp; directory and local dirs | `$ mkdir -p /tmp/claude/demo/`<br/>`$ cd /tmp/claude/demo/`<br/>`$ export certsDir="$(pwd)/certs/"`<br/>`$ export localDir="$(pwd)/local/"`<br/>`$ export logDir="$(pwd)/logs/"`<br/>`$ mkdir -p "$certsDir" "$localDir" "$logDir"` | N/A |
+| A02 | Clone the bundle, set `topDir` | `$ git clone https://github.com/John-D-B/Claudes.git`<br/>`$ cd Claudes/2026-06-01.EJBCA-tools/`<br/>`$ topDir=$(pwd)` | *Manual*<br/>`A02-clone` |
 | A03 | Set up Python deps and PATH | `$ python3 -m venv .venv`<br/>`$ source .venv/bin/activate`<br/>`$ pip install -r ./cg/requirements.txt`<br/>`$ pip install -r ./elt/requirements.txt`<br/>`$ export PATH="${topDir}/bin:$PATH"` | *Manual*<br/>`A03-deps` |
-| A04 | Show each tool's location and version | `$ which <tool>`<br/>`$ <tool> --version`<br/>deploy_ejbca_k8s.py, ejbca-lifecycle-tool.py, cert-grep.py,<br/>&nbsp; ssl-grep.py, docker, kubectl, k3d, helm, keytool, jq, openssl, python3, git | *Manual*<br/>`A04-tools` |
+| A04 | Show tool location \& version | `$ which <tool>`<br/>`$ <tool> --version`<br/>deploy_ejbca_k8s.py, ejbca-lifecycle-tool.py, cert-grep.py,<br/>&nbsp; ssl-grep.py, docker, kubectl, k3d, helm, keytool, jq,<br/>&nbsp; openssl, python3, git | *Manual*<br/>`A04-tools` |
 
 ### Expanded: A01-A04
 
@@ -118,8 +118,8 @@ Docker Desktop groups them under the compose project name `stack` (the directory
 | # | Step | Command | Log |
 |---|---|---|---|
 | B00 | Prep | `$ cd ${topDir}/ejbca-ce/`<br/>`$ alias dek=deploy_ejbca_k8s.py`<br/>`$ alias elt=ejbca-lifecycle-tool.py`   | N/A |
-| B01 | Wipe any existing server and database | `$ docker compose -f stack/docker-compose.yml down -v` | *Manual*<br/>`B01-wipe` |
-| B02 | Show the clean slate:<br/>&nbsp; no containers, no database volume | `$ docker compose -f stack/docker-compose.yml ps`<br/>`$ docker volume ls` | *Manual*<br/>`B02-show-clean` |
+| B01 | Wipe existing server \& database | `$ docker compose -f stack/docker-compose.yml down -v` | *Manual*<br/>`B01-wipe` |
+| B02 | Show the clean slate:<br/>&nbsp; no containers,<br/>&nbsp; no database volume | `$ docker compose -f stack/docker-compose.yml ps`<br/>`$ docker volume ls` | *Manual*<br/>`B02-show-clean` |
 | B03 | Create the two containers<br/>&nbsp; server + database | `$ docker compose -f stack/docker-compose.yml up -d` | *Manual*<br/>`B03-create` |
 | B04 | Show them running | `$ docker compose -f stack/docker-compose.yml ps` | *Manual*<br/>`B04-show-running` |
 | B05 | Bootstrap: writes the client<br/>&nbsp; creds into `$certsDir`<br/>&nbsp; (each `21N` script self-logs) | `$ for s in ./Bin/210.bootstrap/*.sh; do "$s" \|\| break; done` | `B05-verify-stack`<br/>`B05-superadmin`<br/>`B05-enable-rest`<br/>`B05-create-admin`<br/>`B05-truststore`<br/>`B05-verify-mtls`<br/>`B05-import-profiles`<br/>`B05-verify-profiles`<br/>`B05-reissue-cert` |
