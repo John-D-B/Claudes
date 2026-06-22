@@ -1,15 +1,21 @@
-# EJBCA-CE DEMO
+# EJBCA-CE Demo "automated"
 
-*End-to-End Demonstration*
+*Automated steps of the "K8s cert-manager workflow demo",<br/>
+ &nbsp; &nbsp; most useful to validate JohnB's two EJBCA-CE pull-requests for K8s cert-manager cleanup.<br/>
+ &nbsp; &nbsp; Also useful for quickly building a stand-alone test environment for EJBCA-CE with K8s cert-manger.*
 
 **Author:** JohnB, with AI pair-programming support by Anthropic Claude<br/>
 **Date:** 2026-06-21
 
-**Audience:** vendor reviewers and operators who want to reproduce the<br/>
-&nbsp; &nbsp; Fix-26 / Fix-27 verification from a fresh clone.
+**Audience:**<br/>
+Keyfactor EJBCA-CE vendor reviewers, and EJBCA customers (aka operators)<br/>
+&nbsp; &nbsp; who want to reproduce the Fix-26 / Fix-27 pull-requests from a fresh clone.
 
 This walkthrough goes from `git clone` to both PR integration tests passing,<br/>
 &nbsp; &nbsp; then finishes with the real-world scenario the PRs exist to solve.
+
+*For the step-by-step manual run book — every command shown, with per-step logs —<br/>
+&nbsp; &nbsp; see [`DEMO-manually.md`](./DEMO-manually.md).*
 
 **What it proves:**
 
@@ -29,7 +35,7 @@ The finale reproduces cert-manager renewal accumulation,<br/>
 ## Terminology
 
 - **script group:**<br/>
-One of the seven numbered sub-directories under `Bin/`:<br/>
+One of the numbered sub-directories under `Bin/`:<br/>
 &nbsp; &nbsp; `200.build/`, `210.bootstrap/`, `220.certs/`, `230.rebuild/`,<br/>
 &nbsp; &nbsp; `300.cluster/`, `500.verify-PR/`, `900.probes/`.<br/>
 Scripts inside a group run in sort order; each is idempotent and rerunnable.
@@ -45,8 +51,6 @@ The Fix-26 integration test runs against certificates that already exist<br/>
 - **Echo-before-run convention:**<br/>
 Every script prints each `curl` / `docker` / `keytool` command before executing it,<br/>
 &nbsp; &nbsp; so you can copy-paste any single probe and iterate by hand.
-
-<br/><br/><br/><br/><br/><br/>
 
 ## Prerequisites
 

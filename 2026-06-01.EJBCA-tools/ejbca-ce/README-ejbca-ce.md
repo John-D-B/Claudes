@@ -1,11 +1,11 @@
-# EJBCA-CE build
+# EJBCA-CE build and test
 
 *Local EJBCA Community Edition stack + workflow scripts.*
 
 **Author:** JohnB, with AI pair-programming support by Anthropic Claude<br/>
 **Date:** 2026-06-21
 
-This is as small Docker Compose stack for EJBCA-CE, plus the shell scripts that<br/>
+This is a small Docker Compose stack for EJBCA-CE, plus the shell scripts that<br/>
 &nbsp; &nbsp; build it from scratch, rebuild it after local source changes, stand up a k3d<br/>
 &nbsp; &nbsp; cluster for the cert-manager demo, probe it, and verify two<br/>
 &nbsp; &nbsp; community-edition PRs (`Fix-26` REST `DELETE` endpoint and `Fix-27`<br/>
@@ -21,32 +21,52 @@ These scripts are the *published* mirror of the live working set used during<br/
 &nbsp; &nbsp; PR-work on `ejbca-ce/9.3.7` — they're the same scripts that produced the<br/>
 &nbsp; &nbsp; *"13/13 PASS"* and *"174-cert BYOC"* numbers cited in the PR descriptions.
 
-**New here?** [`DEMO.md`](./DEMO.md) is the guided clone-to-verified walkthrough;<br/>
-&nbsp; &nbsp; this README is the reference it draws on.
+**New here?**<br/>
+I provide two equivalent demo workflows, both automated and manual, with full transparency:
+- Scripted fast path: &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; [`DEMO-automated.md`](./DEMO-automated.md)
+- Step-by-step run book: &nbsp; &nbsp; [`DEMO-manually.md`](./DEMO-manually.md)
+
+This README is the reference both draw on.
 
 <br/>
 
 ## What you get
 
-Seven workflow script groups ("buckets"), each its own `Bin/<NNN>.<purpose>/` sub-dir:
+### Top level of `ejbca-ce/`:
+
+| Path | What |
+|---|---|
+| `Bin/elt/` | Non-secret config templates:<br/>&nbsp; &nbsp; `- ce-target.env.example`<br/>&nbsp; &nbsp; `- ee-target.env.example`<br/>FYI: *generated* `*-target.env` files are written to `$localDir` |
+| `DEMO-automated.md` | Scripted clone-to-verified walkthrough. |
+| `DEMO-manually.md` | Step-by-step run book — every command shown. |
+| `Docs/` | Supporting documents for the PRs:<br/>&nbsp; &nbsp; - Fix-27 and Fix-26 design docs<br/>&nbsp; &nbsp; - Fix-27 and Fix-26 test plans<br/>&nbsp; &nbsp; - admin-GUI mockup: `fix27-gui-mockup.png`<br/>&nbsp; &nbsp; - CE REST End-Entity gap analysis: why ELT speaks SOAP to CE |
+| `README-ejbca-ce.md` | This file. |
+| `images/` | Screenshots referenced by `DEMO-manually.md`. |
+| `patches/` | The `Fix-26` / `Fix-27` source patches,<br/>&nbsp; &nbsp; applied by `231.build-local-image.sh`. |
+| `references/` | Historical logs of JohnB's manual workflow,<br/>&nbsp; &nbsp; for comparison with your own work. |
+| `requirements.txt` | Python deps for the bundled tools:<br/>&nbsp; &nbsp;  - `zeep` for ELT's SOAP backend<br/>&nbsp; &nbsp; - `cryptography` for **cert-grep** |
+| `stack/` | Docker container stacks:<br/>&nbsp; &nbsp; - `mariadb` (database, state)<br/>&nbsp; &nbsp; - `ejbca-ce` (web app server) |
+
+
+### Workflow script groups:
 
 | Script group | Purpose | When you run it |
 |---|---|---|
-| `Bin/200.build/` | From-scratch server build — orchestrator that drives `210.bootstrap/` | Once, after `git clone` |
+| `Bin/200.build/` | From-scratch server build —<br/>&nbsp; &nbsp; orchestrator that drives `210.bootstrap/` | Once, after `git clone` |
 | `Bin/210.bootstrap/` | Stack bring-up + admin bootstrap + profile import | Via `201`, or step-by-step |
-| `Bin/220.certs/` | Export the server cert to `$certsDir` + write `local/ce-target.env` (`214` wrote the client cert + CA) | After bootstrap |
-| `Bin/230.rebuild/` | Rebuild the EJBCA container with your local source edits | Every time you change EJBCA Java code |
-| `Bin/300.cluster/` | Stand up the k3d cluster + CoreDNS for the cert-manager demo | Before the K8s cert-manager demo |
-| `Bin/500.verify-PR/` | Integration tests that lock in PR-fix behaviour | After every rebuild that touches PR-relevant code |
-| `Bin/900.probes/` | Ad-hoc protocol probes (SOAP / REST / smoke) | Whenever you want a quick health/protocol check |
+| `Bin/220.certs/` | Export the server cert to `$certsDir`,<br/>&nbsp; &nbsp; and write `$localDir/ce-target.env`<br/>&nbsp; &nbsp; (`214` wrote the client cert + CA) | After bootstrap |
+| `Bin/230.rebuild/` | Rebuild the EJBCA container with local source edits | Every time the EJBCA Java code changes |
+| `Bin/300.cluster/` | Stand up the k3d cluster + CoreDNS<br/>&nbsp; &nbsp; for the cert-manager demo | Before the K8s cert-manager demo |
+| `Bin/500.verify-PR/` | Integration tests that lock in PR-fix behaviour | After rebuilds that touches PR-relevant code |
+| `Bin/900.probes/` | Ad-hoc protocol probes (SOAP / REST / smoke) | When you want a quick health/protocol check |
 
 Scripts inside each group are numbered from `decade+1` and run in sort order<br/>
 &nbsp; &nbsp; (e.g. `211 → 212 → 213 → …` inside `Bin/210.bootstrap/`). The hundreds<br/>
-&nbsp; &nbsp; digit groups the buckets by workflow phase (`2xx` = server, `3xx` =<br/>
+&nbsp; &nbsp; digit groups them by workflow phase (`2xx` = server, `3xx` =<br/>
 &nbsp; &nbsp; cluster, `5xx` = PR verification, `9xx` = probes) and aligns with the<br/>
-&nbsp; &nbsp; sections of the [`DEMO.md`](./DEMO.md) walkthrough.
+&nbsp; &nbsp; sections of the [`DEMO-manually.md`](./DEMO-manually.md) walkthrough.
 
-Two groups are **orchestrators** that drive others, and live outside the glob<br/>
+**Orchestrator** groups drive others and live outside the glob<br/>
 &nbsp; &nbsp; they run: `200.build/201.build-server.sh` runs all of `210.bootstrap/*.sh`<br/>
 &nbsp; &nbsp; then `220.certs/221.collect-certs.sh`;<br/>
 &nbsp; &nbsp; `300.cluster/301.build-cluster.sh` builds the k3d cluster in one step.
@@ -55,27 +75,44 @@ The 3-digit scheme is intentional: it visually distinguishes the convention<br/>
 &nbsp; &nbsp; from any legacy `<phase>.<step>` scripts (`1.4d`, `3.5`, etc.) that might<br/>
 &nbsp; &nbsp; appear in DEV-only contexts.
 
-Also at the top of `ejbca-ce/`:
-
-| Path | What |
-|---|---|
-| `stack/docker-compose.yml` | Two-container stack — `mariadb` (state) + `ejbca` (the CE server). |
-| `stack/Dockerfile.local-fixes` | Build wrapper that ships your local-source EJBCA EAR into the upstream CE base image. Used by `Bin/230.rebuild/231.build-local-image.sh`. |
-| `stack/coredns-custom.yaml` | CoreDNS override applied by `Bin/300.cluster/301.build-cluster.sh` so `host.k3d.internal` resolves to the host from inside the k3d cluster. |
-| `stack/init-release17.gradle.kts` | Gradle init script pinning the toolchain for the local-source EJBCA build. |
-| `Bin/elt/` | Non-secret config templates (`ce-target.env.example`, `ee-target.env.example`). The *generated* `*-target.env` files are written to `local/`, not here. |
-| `requirements.txt` | Python deps for the bundled tools (`zeep` for ELT's SOAP backend, `cryptography` for `cert-grep`). |
-| `Docs/` | Supporting documents for the PRs: the Fix-27 and Fix-26 design docs, the Fix-27 and Fix-26 test plans, the admin-GUI mockup (`fix27-gui-mockup.svg` / `.png`), and the CE REST End-Entity gap analysis (why ELT speaks SOAP to CE). |
-| `README-ejbca-ce.md` | This file. |
-
 <br/>
 
 ## Layout (what you should see after cloning)
 
 ```
 ejbca-ce/
-├── README-ejbca-ce.md
-├── requirements.txt
+├── Bin/
+│   ├── 200.build/
+│   │   └── 201.build-server.sh
+│   ├── 210.bootstrap/
+│   │   ├── 211.verify-stack.sh
+│   │   ├── 212.bootstrap-superadmin.sh
+│   │   ├── 213.enable-rest-api.sh
+│   │   ├── 214.create-admin.sh
+│   │   ├── 215.populate-truststore.sh
+│   │   ├── 216.verify-mtls.sh
+│   │   ├── 217.import-profiles.sh
+│   │   ├── 218.verify-profiles.sh
+│   │   └── 219.reissue-server-cert.sh
+│   ├── 220.certs/
+│   │   └── 221.collect-certs.sh
+│   ├── 230.rebuild/
+│   │   ├── 231.build-local-image.sh
+│   │   └── 232.swap-stack-image.sh
+│   ├── 300.cluster/
+│   │   └── 301.build-cluster.sh
+│   ├── 500.verify-PR/
+│   │   ├── 501.fix-26-integration-test.sh
+│   │   └── 502.fix-27-integration-test.sh
+│   ├── 900.probes/
+│   │   ├── 901.smoke-test.sh
+│   │   ├── 902.probe-soap.sh
+│   │   └── 903.inspect-wsdl.sh
+│   └── elt/
+│       ├── ce-target.env.example
+│       └── ee-target.env.example
+├── DEMO-automated.md
+├── DEMO-manually.md
 ├── Docs/
 │   ├── ejbca-ce-rest-endentity-gap.md
 │   ├── ejbca-ce-task-3.4-dbms-worker-design.md
@@ -84,42 +121,26 @@ ejbca-ce/
 │   ├── ejbca-ce-task-3.7-fix-26-test-plan.md
 │   ├── fix27-gui-mockup.png
 │   └── fix27-gui-mockup.svg
-├── stack/
-│   ├── docker-compose.yml
-│   ├── Dockerfile.local-fixes
-│   ├── coredns-custom.yaml
-│   ├── init-release17.gradle.kts
-│   └── README-stack.md
-└── Bin/
-    ├── 200.build/
-    │   └── 201.build-server.sh
-    ├── 210.bootstrap/
-    │   ├── 211.verify-stack.sh
-    │   ├── 212.bootstrap-superadmin.sh
-    │   ├── 213.enable-rest-api.sh
-    │   ├── 214.create-admin.sh
-    │   ├── 215.populate-truststore.sh
-    │   ├── 216.verify-mtls.sh
-    │   ├── 217.import-profiles.sh
-    │   ├── 218.verify-profiles.sh
-    │   └── 219.reissue-server-cert.sh
-    ├── 220.certs/
-    │   └── 221.collect-certs.sh
-    ├── 230.rebuild/
-    │   ├── 231.build-local-image.sh
-    │   └── 232.swap-stack-image.sh
-    ├── 300.cluster/
-    │   └── 301.build-cluster.sh
-    ├── 500.verify-PR/
-    │   ├── 501.fix-26-integration-test.sh
-    │   └── 502.fix-27-integration-test.sh
-    ├── 900.probes/
-    │   ├── 901.smoke-test.sh
-    │   ├── 902.probe-soap.sh
-    │   └── 903.inspect-wsdl.sh
-    └── elt/
-        ├── ce-target.env.example
-        └── ee-target.env.example
+├── README-ejbca-ce.md
+├── images/
+│   ├── EJBCA-CE_client_cert.png
+│   ├── EJBCA-CE_in_browser.png
+│   ├── Firefox-cert-ELT-Admin.png
+│   ├── Firefox-cert-ManagementCA.png
+│   ├── fix27-gui-mockup-scaled.png
+│   └── fix27-gui-mockup.png
+├── patches/
+│   ├── fix-26.patch
+│   └── fix-27.patch
+├── references/
+│   └── logs.2026-06-22.zip
+├── requirements.txt
+└── stack/
+    ├── Dockerfile.local-fixes
+    ├── README-stack.md
+    ├── coredns-custom.yaml
+    ├── docker-compose.yml
+    └── init-release17.gradle.kts
 ```
 
 The build writes **no credentials inside the clone**. The working certs go to an<br/>
@@ -135,7 +156,7 @@ The build writes **no credentials inside the clone**. The working certs go to an
 ```bash
 # (1) Build the server from scratch: wipe + bring up the stack, wait for
 #     readiness, run the 210.bootstrap/ sequence, then collect the certs and
-#     write local/ce-target.env (221) — all in one step.
+#     write $localDir/ce-target.env (221) — all in one step.
 Bin/200.build/201.build-server.sh
 
 # (2) Load the generated connection config (host, ports, client cert/key/CA).
@@ -216,8 +237,8 @@ The build writes the working certs to an out-of-repo `$certsDir` (default<br/>
 | `ELT-Admin.p12` | Admin client P12 | `214.create-admin.sh` |
 | `ELT-Admin.password` | P12 password for the above | `214.create-admin.sh` |
 | `ManagementCA.crt` | ManagementCA cert (CA bundle for mTLS) | `214.create-admin.sh` |
+| `SuperAdmin.{jks,p12,password}` | Auto-bootstrap SuperAdmin keystore:<br/>&nbsp; &nbsp; for admin work needing SuperAdmin,<br/>&nbsp; &nbsp; rather than ELT-Admin.| `212.bootstrap-superadmin.sh` |
 | `host.k3d.internal.crt` | EJBCA's server TLS cert (exported leaf) | `221.collect-certs.sh` |
-| `SuperAdmin.{jks,p12,password}` | Auto-bootstrap SuperAdmin keystore — for admin work needing SuperAdmin rather than ELT-Admin | `212.bootstrap-superadmin.sh` |
 
 `214` writes the client cert + key + CA straight into `$certsDir` (no in-repo<br/>
 &nbsp; &nbsp; staging); `221` adds the server cert (exported from the container keystore)<br/>
@@ -236,7 +257,7 @@ The build writes the working certs to an out-of-repo `$certsDir` (default<br/>
 &nbsp; &nbsp; `up -d`), waits for the admin GUI to answer `200`, runs every<br/>
 &nbsp; &nbsp; `Bin/210.bootstrap/*.sh` in order, then collects the certs via<br/>
 &nbsp; &nbsp; `220.certs/221.collect-certs.sh`. One command to go from a clean clone to a<br/>
-&nbsp; &nbsp; bootstrapped server with `local/ce-target.env` ready to source — a fresh<br/>
+&nbsp; &nbsp; bootstrapped server with `$localDir/ce-target.env` ready to source — a fresh<br/>
 &nbsp; &nbsp; bootstrap mints a new ManagementCA, so collecting in the same run is what<br/>
 &nbsp; &nbsp; keeps the certs valid.
 
@@ -278,7 +299,7 @@ The build writes the working certs to an out-of-repo `$certsDir` (default<br/>
 
 `221.collect-certs.sh` — export the server TLS cert (the leaf, via `keytool`)<br/>
 &nbsp; &nbsp; from the running stack into `$certsDir`, and write the generated<br/>
-&nbsp; &nbsp; `local/ce-target.env` consumed by ELT and the probe scripts. (`214` already<br/>
+&nbsp; &nbsp; `$localDir/ce-target.env` consumed by ELT and the probe scripts. (`214` already<br/>
 &nbsp; &nbsp; wrote the admin cert + key + P12 + ManagementCA into `$certsDir`.)
 
 ### `Bin/230.rebuild/` — rebuild after a code edit
@@ -309,7 +330,7 @@ The build writes the working certs to an out-of-repo `$certsDir` (default<br/>
 
 `502.fix-27-integration-test.sh` — exercises the new DBMS Maintenance Worker<br/>
 &nbsp; &nbsp; (`MODE_REVOKED`) added by **PR-fix-27**. Provisions 13 test fixtures<br/>
-&nbsp; &nbsp; spanning the E/R/r lifecycle buckets including the `status=60` ARCHIVED<br/>
+&nbsp; &nbsp; spanning the E/R/r lifecycle states including the `status=60` ARCHIVED<br/>
 &nbsp; &nbsp; substate, runs the worker on a 1-minute interval, and asserts the<br/>
 &nbsp; &nbsp; expected sweep + survivorship pattern (T1–T13).
 
