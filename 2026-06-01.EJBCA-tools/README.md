@@ -1,12 +1,12 @@
 # EJBCA tools
 
-See **[README-EJBCA-tools.md](README-EJBCA-tools.md)** for the full overview,
-tool list, and rationale.
+See &nbsp; **[EJBCA-CE-PR-workflow-demo.pptx](ppt/EJBCA-CE-PR-workflow-demo.pptx)** &nbsp; for a user-focused introduction.
 
 Quick links:
-- [Getting started — install + smoke-test](bin/)
-- [DEMO — clone-to-verified walkthrough for the EJBCA-CE PRs](ejbca-ce/DEMO.md)
+- [DEMO-automated.md](ejbca-ce/DEMO-automated.md) — clone-to-verified walkthrough for the EJBCA-CE PRs
+- [DEMO-manually.md](ejbca-ce/DEMO-manually.md) — step-by-step workflow, with results, for user transparency
+- [README-EJBCA-tools.md](README-EJBCA-tools.md) &nbsp; — for technical overviews, tool lists, and rationale.
 - [`deploy_ejbca_k8s.py`](dek/) — Kubernetes deploy + test-cert issuance
 - [`ejbca-lifecycle-tool.py` (ELT)](elt/) — direct EJBCA REST/SOAP client
-- [`cert-grep.py`](cg/) — X.509 pretty-printer
+- [`cert-grep.py` & `ssl-grep.py`](cg/) — X.509 certificate inspectors
 - [`ejbca-ce/`](ejbca-ce/) — local EJBCA-CE Docker stack + workflow script groups (Fix-26 + Fix-27 verification)
