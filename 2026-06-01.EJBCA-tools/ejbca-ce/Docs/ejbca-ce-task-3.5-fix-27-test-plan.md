@@ -285,7 +285,7 @@ The point is **full awareness**.
 
 An EJBCA administrator deploying this PR into their environment should be<br/>
 &nbsp; &nbsp; able to read the recipe, perform every step against their own stack,<br/>
-&nbsp; &nbsp; see the worker configuration form (per `Docs/fix27-gui-mockup.svg`),<br/>
+&nbsp; &nbsp; see the worker configuration form (per `Docs/fix27-gui-mockup.png`),<br/>
 &nbsp; &nbsp; watch the worker tick, and verify the cleanup happened — all without<br/>
 &nbsp; &nbsp; trusting any opaque automation.
 

@@ -119,8 +119,7 @@ ejbca-ce/
 │   ├── ejbca-ce-task-3.5-fix-27-test-plan.md
 │   ├── ejbca-ce-task-3.6-rest-delete-design.md
 │   ├── ejbca-ce-task-3.7-fix-26-test-plan.md
-│   ├── fix27-gui-mockup.png
-│   └── fix27-gui-mockup.svg
+│   └── fix27-gui-mockup.png
 ├── README-ejbca-ce.md
 ├── images/
 │   ├── EJBCA-CE_client_cert.png

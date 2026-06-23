@@ -20,7 +20,7 @@
 >
 > Canonical references for the current design:<br/>
 > - the Fix-27 PR description
-> - `fix27-gui-mockup.svg` (GUI mockup)
+> - `fix27-gui-mockup.png` (GUI mockup)
 > - `Bin/500.verify-PR/502.fix-27-integration-test.sh` : tests T10–T13
 > 
 > <br/>

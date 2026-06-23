@@ -39,10 +39,18 @@ index af1c17597c..909d9334ea 100644
      @Path("/expire")
      @Produces(MediaType.APPLICATION_JSON)
 diff --git a/modules/ejbca-rest-certificate/src/org/ejbca/ui/web/rest/api/resource/CertificateRestResource.java b/modules/ejbca-rest-certificate/src/org/ejbca/ui/web/rest/api/resource/CertificateRestResource.java
-index 5f2adb5ec3..6d5482b7fb 100644
+index 5f2adb5ec3..cd77f2ce9e 100644
 --- a/modules/ejbca-rest-certificate/src/org/ejbca/ui/web/rest/api/resource/CertificateRestResource.java
 +++ b/modules/ejbca-rest-certificate/src/org/ejbca/ui/web/rest/api/resource/CertificateRestResource.java
-@@ -26,11 +26,15 @@ import org.apache.log4j.Logger;
+@@ -18,6 +18,7 @@ import com.keyfactor.util.CertTools;
+ import com.keyfactor.util.EJBTools;
+ import com.keyfactor.util.StringTools;
+ import com.keyfactor.util.certificate.CertificateWrapper;
++import com.keyfactor.util.certificate.DnComponents;
+ import com.keyfactor.util.crypto.algorithm.AlgorithmTools;
+ import com.keyfactor.util.keys.KeyTools;
+ import java.security.cert.CertificateParsingException;
+@@ -26,11 +27,15 @@ import org.apache.log4j.Logger;
  import org.bouncycastle.cms.CMSException;
  import org.cesecore.authentication.tokens.AuthenticationToken;
  import org.cesecore.authorization.AuthorizationDeniedException;
@@ -58,7 +66,7 @@ index 5f2adb5ec3..6d5482b7fb 100644
  import org.cesecore.certificates.certificate.IllegalKeyException;
  import org.cesecore.certificates.certificate.certextensions.CertificateExtensionException;
  import org.cesecore.certificates.certificateprofile.CertificateProfileDoesNotExistException;
-@@ -133,6 +137,12 @@ public class CertificateRestResource extends BaseRestResource {
+@@ -133,6 +138,12 @@ public class CertificateRestResource extends BaseRestResource {
      @EJB
      private RaMasterApiProxyBeanLocal raMasterApi;
  
@@ -71,7 +79,7 @@ index 5f2adb5ec3..6d5482b7fb 100644
      /**
       * Enrolls a user generated certificate from csr.
       *
-@@ -528,6 +538,69 @@ public class CertificateRestResource extends BaseRestResource {
+@@ -528,6 +539,69 @@ public class CertificateRestResource extends BaseRestResource {
          return Response.ok(result).build();
      }
  
@@ -108,8 +116,8 @@ index 5f2adb5ec3..6d5482b7fb 100644
 +                    + "HEX encoded (optionally with '0x' prefix) e.g. '0x10782a83eef170d4'");
 +        }
 +        // Authorization: caller must have CA access for the issuing CA. The
-+        // CA ID is the hash of the subject DN (standard EJBCA convention).
-+        final int caId = issuerDN.hashCode();
++        // CA ID is the hash of the BC-normalized subject DN, matching X509CAInfo.
++        final int caId = DnComponents.stringToBCDNString(issuerDN).hashCode();
 +        if (!authorizationSession.isAuthorizedNoLogging(admin, StandardRules.CAACCESS.resource() + caId)) {
 +            throw new AuthorizationDeniedException("Not authorized to delete certificates from CA '" + issuerDN + "'.");
 +        }
