@@ -1,7 +1,7 @@
 # EJBCA tools
 
 User-focused introduction:
-- [**EJBCA-CE-PR-workflow-demo.pptx**](ppt/EJBCA-CE-PR-workflow-demo.pptx?raw=1) &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; (PowerPoint — downloads on click)
+- [**EJBCA-CE-PR-workflow-demo.pptx**](https://github.com/John-D-B/Claudes/raw/main/2026-06-01.EJBCA-tools/ppt/EJBCA-CE-PR-workflow-demo.pptx) &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; (PowerPoint — downloads on click)
 - [**EJBCA-CE-PR-workflow-demo.A4.pdf**](ppt/EJBCA-CE-PR-workflow-demo.A4.pdf) &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; (PDF edition, A4 paper)
 - [**EJBCA-CE-PR-workflow-demo.US-Letter.pdf**](ppt/EJBCA-CE-PR-workflow-demo.US-Letter.pdf) &nbsp; &nbsp; (PDF edition, US-Letter paper)
 
